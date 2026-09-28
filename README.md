@@ -173,8 +173,17 @@ Cut-offs may be entered as decimals or as fractions.
 
 The interval convention, plus the requirement that the cut-offs partition `[0, 1]`, are what the well-formedness check should enforce for custom templates.
 
+## Code layout
+
+- `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
+
 ## Build
 
 Recipes live in the `justfile`. Use `just`, not `make`.
 
-On Windows, the justfile runs recipes with PowerShell (`set windows-shell`); elsewhere `just` uses `sh`. Go build and test recipes will be added along with the Go code.
+- `just test` runs the tests.
+- `just vet` runs `go vet`.
+- `just check` runs both.
+- `just fmt` formats the Go code.
+
+On Windows, the justfile runs recipes with PowerShell (`set windows-shell`); elsewhere `just` uses `sh`.
