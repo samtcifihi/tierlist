@@ -1,5 +1,7 @@
 # This project uses just, not make.
-# Recipes will be added once the language and target platform are chosen.
+# Go recipes will be added along with the Go code.
+
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
 default:
     @just --list
