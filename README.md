@@ -38,15 +38,30 @@ Each answer is a result the Bayes Elo calculation uses. The finished comparison 
 
 ### Choosing the next pair
 
-The exact method is not decided yet. It should:
+By default, the program scores every candidate pair and presents the one with the highest score, breaking ties at random. The score is the expected information the comparison would give Bayes Elo, adjusted as described below.
 
-- by default, present the comparison that gives Bayes Elo the most useful information; in practice, two entries whose ratings are close but not yet confidently known
-- strongly favor entries that have not been compared yet, so every entry gets compared at least once
-- discourage repeating a pair that has already been compared, without forbidding it
+**Expected information.** For entries A and B, pairs are ranked by
+
+```
+closeness(A, B) × uncertainty(A - B)
+```
+
+- **Closeness** is how close to a coin flip the comparison is expected to be: highest when the two ratings are equal, falling as they move apart. Precisely, it is the Fisher information of one comparison's outcome (win, draw or loss) with respect to the rating difference, under the Bayes Elo model at the current ratings.
+- **Uncertainty** is the variance of the difference between the two ratings, `Var(A) + Var(B) - 2 Cov(A, B)`, from Bayes Elo's estimate of the ratings' covariance (the same estimate its ± error bars come from).
+
+Under the usual Gaussian approximation of the ratings, the expected information gain of a comparison is `½ ln(1 + closeness × uncertainty)`, so ranking by the product is ranking by expected information. It favors entries whose ratings are close but not yet confidently known. Closeness alone is not enough: two entries with many comparisons behind them and nearly equal ratings are a coin flip, but another answer would barely change either rating.
+
+**Adjustments.**
+
+- **Repeats:** each earlier comparison of the same pair multiplies its score by a penalty factor (for example ½), and the same pair is not presented twice in a row unless no other pair is available. Repeats are otherwise allowed. Each comparison already lowers the pair's uncertainty, but the model treats every answer as independent, while a user who remembers an earlier answer gives less new information than the model expects.
+- **Uncompared entries:** a pair that includes an entry with no comparisons yet gets a large bonus factor, so every entry gets compared at least once. (Such entries already score high, since only the prior constrains them.)
+- **Sides:** the two entries are shown in random order, so a habit of picking one side does not skew the ratings.
+
+The exact penalty and bonus factors are tuning details.
 
 #### Focus mode
 
-The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, every pair presented includes at least one of those entries.
+The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, only pairs that include at least one of those entries are scored and presented.
 
 ### Session state
 
@@ -69,7 +84,9 @@ Behind the scenes the program lists every real entry from best to worst by Bayes
 
 The display algorithm does not care by how much one entry beat another, except for the draw-margin rule below.
 
-Positions on that list are mapped onto the closed interval `[0, 1]`, where `0` is the worst entry and `1` is the best. With one entry there is no span between worst and best; that edge case needs a defined convention when the program is implemented.
+Positions on that list are mapped evenly onto the closed interval `[0, 1]`, where `0` is the worst entry and `1` is the best: with `n` entries, the `k`-th best is at `(n-k)/(n-1)`.
+
+A tier list needs at least two entries. With one there is no span between worst and best, and not much point in a tier list anyway, so with fewer than two entries the program shows an error asking the user to add more.
 
 ### Draw-margin and groups
 
@@ -123,8 +140,8 @@ So a position exactly on a cut-off belongs to the higher tier under the first co
 
 Star templates are generated from options, and each tier is named by its number of stars:
 
-- **Maximum stars:** a whole number, at least 2.
-- **Include 0:** by default the lowest tier is 0 stars. The user can skip 0 instead, so the lowest tier is 1 star.
+- **Maximum stars:** a whole number, at least 3, so there is always at least one tier between the top and bottom tiers.
+- **Include 0:** by default the lowest tier is 0 stars. The user can skip 0 instead, so the lowest tier is 1 star. This holds with divisions too: 1–5 stars in half-stars is 9 tiers.
 - **Divisions:** by default none, meaning whole stars only. Otherwise a whole number `d`, at least 2, splits each star into steps of `1/d`; `d = 2` gives half-stars.
 
 The tiers run from the maximum number of stars down to the lowest tier in steps of `1/d` star (`d = 1` for whole stars), so there are `n = (max - lowest) * d + 1` tiers.
