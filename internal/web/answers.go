@@ -16,6 +16,8 @@ type answersView struct {
 	Rows     []answerRow
 	Entries  []filterEntry // every entry, by name, to filter by
 	Filtered bool
+	Only     bool // show only the answers between chosen entries
+	Open     bool // show the filter's options
 	Summary  string
 }
 
@@ -40,16 +42,18 @@ type filterEntry struct {
 }
 
 // answers shows the list's answers, newest first. Entry IDs given as entry
-// in the query keep only the answers that involve at least one of them.
+// in the query keep only the answers that involve at least one of them, or
+// with match=only, the answers between two of them.
 func (s *Server) answers(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
+	query := r.URL.Query()
 	chosen := make(map[int]bool)
-	for _, v := range r.URL.Query()["entry"] {
+	for _, v := range query["entry"] {
 		if id, err := strconv.Atoi(v); err == nil {
 			chosen[id] = true
 		}
 	}
-	v := answersView{view: s.view(r, "answers", ol), Total: len(l.Comparisons)}
+	v := answersView{view: s.view(r, "answers", ol), Total: len(l.Comparisons), Only: query.Get("match") == "only"}
 	names := make(map[int]answerName, len(l.Entries))
 	for _, e := range l.Entries {
 		n := answerName{Name: e.Name, Removed: e.Removed, Chosen: chosen[e.ID]}
@@ -66,10 +70,22 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request, ol *openList) {
 		}
 	}
 	v.Filtered = len(chosenNames) > 0
+	// Switching between the two kinds of filter reloads the page, which
+	// keeps the options open.
+	v.Open = v.Filtered || query.Has("match")
 
+	shown := func(c tierlist.Comparison) bool {
+		switch {
+		case !v.Filtered:
+			return true
+		case v.Only:
+			return chosen[c.A] && chosen[c.B]
+		}
+		return chosen[c.A] || chosen[c.B]
+	}
 	for k := len(l.Comparisons) - 1; k >= 0; k-- {
 		c := l.Comparisons[k]
-		if v.Filtered && !chosen[c.A] && !chosen[c.B] {
+		if !shown(c) {
 			continue
 		}
 		row := answerRow{N: k + 1, First: names[c.A], Second: names[c.B], Same: c.Answer == tierlist.AboutSame}
@@ -78,21 +94,32 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request, ol *openList) {
 		}
 		v.Rows = append(v.Rows, row)
 	}
+	among := "between " + list(chosenNames, "and")
+	if len(chosenNames) > 2 {
+		among = "among " + list(chosenNames, "and")
+	}
 	switch {
 	case !v.Filtered:
 		v.Summary = plural(v.Total, "answer", "answers") + ", newest first."
+	case v.Only && len(chosenNames) == 1:
+		v.Summary = "Every answer is about two entries, so tick at least two to see the answers only between them."
+	case v.Only && len(v.Rows) == 0:
+		v.Summary = fmt.Sprintf("None of the %s are %s.", plural(v.Total, "answer", "answers"), among)
+	case v.Only:
+		v.Summary = fmt.Sprintf("Answers %s: %d of %d, newest first.", among, len(v.Rows), v.Total)
 	case len(v.Rows) == 0:
-		v.Summary = fmt.Sprintf("None of the %s involve %s.", plural(v.Total, "answer", "answers"), orList(chosenNames))
+		v.Summary = fmt.Sprintf("None of the %s involve %s.", plural(v.Total, "answer", "answers"), list(chosenNames, "or"))
 	default:
-		v.Summary = fmt.Sprintf("Answers involving %s: %d of %d, newest first.", orList(chosenNames), len(v.Rows), v.Total)
+		v.Summary = fmt.Sprintf("Answers involving %s: %d of %d, newest first.", list(chosenNames, "or"), len(v.Rows), v.Total)
 	}
 	s.render(w, http.StatusOK, "answers", v)
 }
 
-// orList joins names as "A", "A or B", or "A, B or C".
-func orList(names []string) string {
+// list joins names as "A", "A or B", or "A, B or C", with conj in place
+// of "or".
+func list(names []string, conj string) string {
 	if len(names) < 2 {
 		return strings.Join(names, "")
 	}
-	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+	return strings.Join(names[:len(names)-1], ", ") + " " + conj + " " + names[len(names)-1]
 }

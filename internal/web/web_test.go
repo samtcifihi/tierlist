@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"math"
 	"math/rand/v2"
@@ -533,14 +534,19 @@ func TestDeleteList(t *testing.T) {
 	}
 }
 
-var answerRows = regexp.MustCompile(`<li><span class="num">(\d+)</span> <span>(.*?)</span></li>`)
+var answerRows = regexp.MustCompile(`<tr>\s*<td class="num">(\d+)</td>\s*<td>(.*?)</td>\s*<td class="rel"[^>]*>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>`)
 
-// answersShown returns the answers page's rows as plain text.
+// answersShown returns the rows of the answers table as plain text, cells
+// separated by spaces.
 func answersShown(body string) []string {
 	tags := regexp.MustCompile(`<[^>]*>`)
 	var rows []string
 	for _, m := range answerRows.FindAllStringSubmatch(body, -1) {
-		rows = append(rows, m[1]+" "+tags.ReplaceAllString(m[2], ""))
+		cells := []string{m[1]}
+		for _, cell := range m[2:] {
+			cells = append(cells, html.UnescapeString(tags.ReplaceAllString(cell, "")))
+		}
+		rows = append(rows, strings.Join(cells, " "))
 	}
 	return rows
 }
@@ -557,7 +563,7 @@ func TestAnswersPage(t *testing.T) {
 	c.post(base+"/entries/4/remove", nil)
 
 	_, body := c.get(base + "/answers")
-	want := []string{"3 Casablanca and Dune (removed) about the same", "2 Brazil over Casablanca", "1 Alien over Brazil"}
+	want := []string{"3 Casablanca ≈ Dune (removed)", "2 Brazil > Casablanca", "1 Alien > Brazil"}
 	if got := answersShown(body); !slices.Equal(got, want) || !strings.Contains(body, "3 answers, newest first.") ||
 		!strings.Contains(body, `href="/lists/films/answers" aria-current="page"`) || strings.Contains(body, "<details open") {
 		t.Errorf("answers %q, want %q; page:\n%s", got, want, body)
@@ -568,11 +574,18 @@ func TestAnswersPage(t *testing.T) {
 		rows    []string
 		summary string
 	}{
-		{"entry=2", []string{"2 Brazil over Casablanca", "1 Alien over Brazil"}, "Answers involving Brazil: 2 of 3, newest first."},
-		{"entry=4&entry=1", []string{"3 Casablanca and Dune (removed) about the same", "1 Alien over Brazil"},
+		{"entry=2", []string{"2 Brazil > Casablanca", "1 Alien > Brazil"}, "Answers involving Brazil: 2 of 3, newest first."},
+		{"entry=4&entry=1", []string{"3 Casablanca ≈ Dune (removed)", "1 Alien > Brazil"},
 			"Answers involving Alien or Dune: 2 of 3, newest first."},
 		{"entry=5", nil, "None of the 3 answers involve Eraserhead."},
 		{"entry=x&entry=99", want, "3 answers, newest first."},
+		// Only the answers between ticked entries.
+		{"entry=2&entry=3&match=only", []string{"2 Brazil > Casablanca"}, "Answers between Brazil and Casablanca: 1 of 3, newest first."},
+		{"entry=4&entry=3&entry=2&match=only", []string{"3 Casablanca ≈ Dune (removed)", "2 Brazil > Casablanca"},
+			"Answers among Brazil, Casablanca and Dune: 2 of 3, newest first."},
+		{"entry=1&entry=5&match=only", nil, "None of the 3 answers are between Alien and Eraserhead."},
+		{"entry=2&match=only", nil, "Every answer is about two entries, so tick at least two to see the answers only between them."},
+		{"match=only", want, "3 answers, newest first."},
 	} {
 		_, body := c.get(base + "/answers?" + tt.query)
 		if got := answersShown(body); !slices.Equal(got, tt.rows) || !strings.Contains(body, tt.summary) {
@@ -580,12 +593,20 @@ func TestAnswersPage(t *testing.T) {
 		}
 	}
 	// A filter keeps its choices ticked, shows the chosen names in bold and
-	// offers a way back to every answer.
+	// offers a way back to every answer. Switching between the kinds of
+	// filter applies at once, and ticking waits for the Filter button.
 	_, body = c.get(base + "/answers?entry=2")
-	for _, want := range []string{"<details open>", `value="2" checked`, "<strong>Brazil</strong>", `href="/lists/films/answers">Show all</a>`} {
+	for _, want := range []string{"<details open>", `value="2" checked`, `value="any" checked`, "<strong>Brazil</strong>",
+		`href="/lists/films/answers">Show all</a>`, `class="filter" data-autosubmit`, `<div class="picks" data-wait>`,
+		`<td class="rel" title="better than">&gt;</td>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("filtered page lacks %q:\n%s", want, body)
 		}
+	}
+	_, body = c.get(base + "/answers?match=only")
+	if !strings.Contains(body, "<details open>") || !strings.Contains(body, `value="only" checked`) ||
+		!strings.Contains(body, `<td class="rel" title="about the same as">≈</td>`) {
+		t.Errorf("switching to only between ticked entries, with none ticked:\n%s", body)
 	}
 	// Each entry's count of answers on the entries page leads here.
 	if _, body := c.get(base + "/entries"); !strings.Contains(body, `href="/lists/films/answers?entry=2">2 answers</a>`) ||
@@ -666,5 +687,81 @@ func TestUpcomingPairs(t *testing.T) {
 	}
 	if withA == 4 {
 		t.Errorf("after leaving focus mode, every pair coming up still includes A: %v", upcomingShown(body))
+	}
+}
+
+func TestResetList(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil", "Casablanca")
+	// With no answers there is nothing to reset yet.
+	if _, body := c.get(base + "/entries"); !strings.Contains(body, `data-dialog="reset-list" disabled`) {
+		t.Errorf("reset is offered with no answers:\n%s", body)
+	}
+	c.answer(base, 1, 2, 0, "a")
+	c.answer(base, 2, 3, 1, "same")
+	c.post(base+"/entries/3/remove", nil)
+
+	// The button opens a dialog that says what goes and warns it can't be
+	// undone.
+	_, body := c.get(base + "/entries")
+	for _, want := range []string{`<button type="button" data-dialog="reset-list">Reset this list…</button>`,
+		`<dialog id="reset-list"`, `action="/lists/films/reset"`, "Reset “Films”?",
+		"Its 2 answers will be deleted. The entries stay, and their ratings start over at 1500.",
+		"This can't be undone.", `<button class="danger">Reset</button>`, `<button class="danger">Delete</button>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("entries page lacks %q:\n%s", want, body)
+		}
+	}
+
+	status, loc := c.post(base+"/reset", nil)
+	if u, _ := url.Parse(loc); status != http.StatusSeeOther || u.Path != base+"/entries" ||
+		u.Query().Get("msg") != "Reset the list, deleting 2 answers. Every entry starts again at 1500." {
+		t.Errorf("resetting: %d, %s", status, loc)
+	}
+	l := c.load("films")
+	if len(l.Comparisons) != 0 || len(l.Entries) != 3 || !l.Entries[2].Removed || l.DrawElo != 0 {
+		t.Errorf("saved list after reset: %+v", l)
+	}
+	// The ratings start over, and so does rating, with no answer to undo.
+	_, body = c.get(base + "/entries")
+	for _, m := range shownRatings.FindAllStringSubmatch(body, -1) {
+		if m[2] != "1500" {
+			t.Errorf("%s is rated %s after reset", m[1], m[2])
+		}
+	}
+	if _, _, n, body := c.question(base); n != 0 || strings.Contains(body, "Undo:") || len(upcomingShown(body)) != 4 {
+		t.Errorf("rating after reset: token %d, %d pairs coming up\n%s", n, len(upcomingShown(body)), body)
+	}
+	// Only the program's own pages can reset a list.
+	c.answer(base, 1, 2, 0, "b")
+	req, _ := http.NewRequest("POST", c.srv.URL+base+"/reset", nil)
+	req.Header.Set("Origin", "http://evil.example")
+	if status, _, _ := c.do(req); status != http.StatusForbidden || len(c.load("films").Comparisons) != 1 {
+		t.Errorf("a reset from another site: %d", status)
+	}
+}
+
+// After a reset every entry is new again, so the pairs lined up are chosen
+// afresh: the pair asked and the next two cover all six entries.
+func TestResetPlansAfresh(t *testing.T) {
+	s, c := start(t, t.TempDir())
+	s.rng = rand.New(rand.NewPCG(2, 2))
+	base := c.newList("Letters", "A", "B", "C", "D", "E", "F")
+	for range 8 {
+		a, b, n, _ := c.question(base)
+		c.answer(base, a, b, n, "a")
+	}
+	c.question(base) // lines up pairs chosen from these answers
+	c.post(base+"/reset", nil)
+	a, b, _, body := c.question(base)
+	letter := func(id int) string { return string(rune('A' + id - 1)) }
+	seen := map[string]bool{letter(a): true, letter(b): true}
+	up := upcomingShown(body)
+	for _, p := range up[len(up)-2:] {
+		seen[p[0]], seen[p[1]] = true, true
+	}
+	if len(seen) != 6 {
+		t.Errorf("after reset, asked %s vs %s with %v coming up; want the first three pairs to cover all six entries",
+			letter(a), letter(b), up)
 	}
 }

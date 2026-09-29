@@ -174,6 +174,17 @@ func (l *List) Undo() (Comparison, bool) {
 	return c, true
 }
 
+// Reset deletes every answer, so that rating starts over, keeping the
+// entries (removed ones stay removed), focus mode and display options.
+func (l *List) Reset() {
+	l.Comparisons = []Comparison{}
+	for i := range l.Entries {
+		l.Entries[i].Rating = 0
+	}
+	l.DrawElo = 0
+	l.fit = nil
+}
+
 // Counts returns how many answers involve each entry, by ID.
 func (l *List) Counts() map[int]int {
 	counts := make(map[int]int, len(l.Entries))

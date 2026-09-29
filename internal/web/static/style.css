@@ -86,6 +86,7 @@ button, .button {
   cursor: pointer;
 }
 button:hover, .button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; border-color: var(--line); }
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button.subtle { background: transparent; border-color: transparent; color: var(--muted); padding: .3rem .6rem; }
 button.subtle:hover { color: var(--fg); border-color: var(--line); }
@@ -316,14 +317,25 @@ label.check { display: flex; gap: .4rem; align-items: center; }
   overflow-wrap: anywhere;
 }
 .pick:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
-.answers { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
-.answers li {
-  display: grid;
-  grid-template-columns: 3rem 1fr;
-  gap: .75rem;
-  padding: .4rem .75rem;
-  border-top: 1px solid var(--line);
-  overflow-wrap: anywhere;
+.filter .match { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: .5rem 0 .75rem; padding: 0; background: none; border: 0; }
+.filter .match legend { float: left; margin-right: .25rem; padding: 0; font-weight: 400; color: var(--muted); }
+/* As wide as the answers need, so each row reads as a phrase, and no wider
+   than the page, where long names wrap. */
+.answers {
+  width: fit-content;
+  min-width: min(100%, 26rem);
+  max-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
-.answers li:first-child { border-top: 0; }
-.answers .num { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.answers table { min-width: 100%; border-collapse: collapse; }
+.answers th, .answers td { padding: .4rem .75rem; text-align: left; vertical-align: baseline; overflow-wrap: anywhere; }
+.answers th { font-size: .8rem; font-weight: 600; color: var(--muted); }
+.answers tbody tr { border-top: 1px solid var(--line); }
+.answers .num { white-space: nowrap; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.answers .rel { padding-inline: .25rem; text-align: center; font-weight: 700; }
+@media (max-width: 40rem) {
+  .answers th, .answers td { padding: .4rem .5rem; }
+}

@@ -203,6 +203,39 @@ func TestRemoveRestoreUndo(t *testing.T) {
 	}
 }
 
+func TestReset(t *testing.T) {
+	l := mustNew(t, "Films", "Alien", "Brazil", "Casablanca")
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 2, 3, AboutSame)
+	l.RemoveEntry(3)
+	l.SetFocus([]int{1})
+	l.Display.DrawMargin = 20
+	if fit, _ := l.Fit(); fit.Rating(1) == 0 {
+		t.Fatal("the answers did not move the ratings")
+	}
+	l.Reset()
+	if len(l.Comparisons) != 0 || len(l.Entries) != 3 || !l.Entries[2].Removed ||
+		!slices.Equal(l.Focus, []int{1}) || l.Display.DrawMargin != 20 {
+		t.Errorf("after Reset: %+v", l)
+	}
+	// Rating starts over from the priors alone.
+	fit, err := l.Fit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int{1, 2, 3} {
+		if fit.Rating(id) != 0 || fit.Points(id) != CenterPoints {
+			t.Errorf("entry %d rated %g after Reset", id, fit.Rating(id))
+		}
+	}
+	if math.Abs(fit.SameChance()-1.0/3) > 1e-9 {
+		t.Errorf("draw setting %g after Reset, want the prior's", fit.SameChance())
+	}
+	if _, ok := l.Undo(); ok {
+		t.Error("Undo after Reset took something back")
+	}
+}
+
 func TestCountsAndLevels(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B", "C")
 	mustRecord(t, l, 1, 2, FirstBetter)

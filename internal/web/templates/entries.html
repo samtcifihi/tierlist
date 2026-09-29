@@ -53,7 +53,12 @@
   <button>Rename</button>
 </form>
 
-<h2>Delete list</h2>
-<button type="button" data-dialog="{{.Delete.ID}}">Delete this list…</button>
+<h2>Reset or delete</h2>
+<p class="muted small">Resetting deletes every answer but keeps the entries, so rating starts over. Deleting removes the whole list.</p>
+<div class="actions">
+  <button type="button" data-dialog="{{.Reset.ID}}"{{if not .Answers}} disabled title="There are no answers yet"{{end}}>Reset this list…</button>
+  <button type="button" data-dialog="{{.Delete.ID}}">Delete this list…</button>
+</div>
+{{template "confirm" .Reset}}
 {{template "confirm" .Delete}}
 {{end}}

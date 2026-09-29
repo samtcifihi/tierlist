@@ -4,11 +4,15 @@
 <p>No answers yet. Each answer on the Rate page shows up here.</p>
 <p><a class="button primary" href="{{.List.URL}}/rate">Rate</a></p>
 {{else}}
-<form method="get" action="{{.List.URL}}/answers" class="filter">
-  <details{{if .Filtered}} open{{end}}>
+<form method="get" action="{{.List.URL}}/answers" class="filter" data-autosubmit>
+  <details{{if .Open}} open{{end}}>
     <summary>Filter by entry</summary>
-    <p class="muted small">Tick entries to see only the answers that involve at least one of them.</p>
-    <div class="picks">
+    <fieldset class="match">
+      <legend>Show the answers</legend>
+      <label class="check"><input type="radio" name="match" value="any"{{if not .Only}} checked{{end}}> involving any ticked entry</label>
+      <label class="check"><input type="radio" name="match" value="only"{{if .Only}} checked{{end}}> only between ticked entries</label>
+    </fieldset>
+    <div class="picks" data-wait>
       {{range .Entries}}
       <label class="pick"><input type="checkbox" name="entry" value="{{.ID}}"{{if .Chosen}} checked{{end}}> {{.Name}}{{if .Removed}} <span class="muted">(removed)</span>{{end}}</label>
       {{end}}
@@ -21,11 +25,21 @@
 </form>
 <p class="muted small">{{.Summary}}</p>
 {{with .Rows}}
-<ol class="answers">
-  {{range .}}
-  <li><span class="num">{{.N}}</span> <span>{{template "answer-name" .First}} {{if .Same}}and {{template "answer-name" .Second}} about the same{{else}}over {{template "answer-name" .Second}}{{end}}</span></li>
-  {{end}}
-</ol>
+<div class="answers">
+  <table>
+    <thead><tr><th class="num" scope="col">#</th><th scope="col" colspan="3">Answer</th></tr></thead>
+    <tbody>
+      {{range .}}
+      <tr>
+        <td class="num">{{.N}}</td>
+        <td>{{template "answer-name" .First}}</td>
+        {{if .Same}}<td class="rel" title="about the same as">≈</td>{{else}}<td class="rel" title="better than">&gt;</td>{{end}}
+        <td>{{template "answer-name" .Second}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}
 {{end}}
 {{end}}

@@ -3,7 +3,7 @@
 // look back over its answers.
 // The pages are plain HTML forms rendered on the server; a little
 // JavaScript adds keyboard shortcuts and opens the dialogs that ask before
-// deleting.
+// deleting or resetting.
 package web
 
 import (
@@ -115,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /lists/{list}", s.withList(s.listHome))
 	mux.HandleFunc("POST /lists/{list}/rename", s.withList(s.renameList))
 	mux.HandleFunc("POST /lists/{list}/delete", s.deleteList)
+	mux.HandleFunc("POST /lists/{list}/reset", s.withList(s.resetList))
 	mux.HandleFunc("GET /lists/{list}/rate", s.withList(s.rate))
 	mux.HandleFunc("POST /lists/{list}/answer", s.withList(s.answer))
 	mux.HandleFunc("POST /lists/{list}/undo", s.withList(s.undo))

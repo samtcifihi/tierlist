@@ -36,6 +36,7 @@ type confirm struct {
 	Action string // where the form posts to
 	Title  string
 	Text   string
+	Button string // what the button that goes ahead says
 }
 
 // deleteDialog returns the dialog that asks before deleting the list at
@@ -46,7 +47,7 @@ func deleteDialog(id, url, name string, entries, answers int) confirm {
 		text = fmt.Sprintf("Its %s and %s will be deleted with it.",
 			plural(entries, "entry", "entries"), plural(answers, "answer", "answers"))
 	}
-	return confirm{ID: id, Action: url + "/delete", Title: "Delete “" + name + "”?", Text: text}
+	return confirm{ID: id, Action: url + "/delete", Title: "Delete “" + name + "”?", Text: text, Button: "Delete"}
 }
 
 func (s *Server) library(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +68,7 @@ func (s *Server) library(w http.ResponseWriter, r *http.Request) {
 		if sm.Err != nil {
 			item.Err = sm.Err.Error()
 			item.Delete = confirm{ID: id, Action: item.URL + "/delete", Title: "Delete " + file + "?",
-				Text: "This file can't be opened as a tier list."}
+				Text: "This file can't be opened as a tier list.", Button: "Delete"}
 		}
 		v.Lists = append(v.Lists, item)
 	}
@@ -126,6 +127,18 @@ func (s *Server) deleteList(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(s.lists, key)
 	back(w, r, "/", "Deleted “"+name+"”.", "")
+}
+
+// resetList deletes every answer in the list, keeping its entries.
+func (s *Server) resetList(w http.ResponseWriter, r *http.Request, ol *openList) {
+	n := len(ol.list.Comparisons)
+	ol.list.Reset()
+	if !s.saved(w, ol) {
+		return
+	}
+	ol.queue = nil
+	back(w, r, listURL(ol.key)+"/entries",
+		fmt.Sprintf("Reset the list, deleting %s. Every entry starts again at 1500.", plural(n, "answer", "answers")), "")
 }
 
 // saved saves the list, showing an error page and reporting false if that
@@ -305,6 +318,8 @@ type entriesView struct {
 	Shown   []entryRow
 	Removed []entryRow
 	Focus   bool
+	Answers int
+	Reset   confirm
 	Delete  confirm
 }
 
@@ -325,7 +340,10 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 		return
 	}
 	counts := l.Counts()
-	v := entriesView{view: s.view(r, "entries", ol), Focus: len(l.Focus) > 0,
+	v := entriesView{view: s.view(r, "entries", ol), Focus: len(l.Focus) > 0, Answers: len(l.Comparisons),
+		Reset: confirm{ID: "reset-list", Action: listURL(ol.key) + "/reset", Title: "Reset “" + l.Name + "”?",
+			Text:   fmt.Sprintf("Its %s will be deleted. The entries stay, and their ratings start over at 1500.", plural(len(l.Comparisons), "answer", "answers")),
+			Button: "Reset"},
 		Delete: deleteDialog("delete-list", listURL(ol.key), l.Name, len(l.Shown()), len(l.Comparisons))}
 	for _, e := range l.Entries {
 		row := entryRow{
