@@ -103,9 +103,9 @@ func TestFit(t *testing.T) {
 	if !(fit.Rating(1) > fit.Rating(2)) || !(fit.Rating(2) > fit.Rating(3)) {
 		t.Errorf("ratings %g, %g, %g; want decreasing", fit.Rating(1), fit.Rating(2), fit.Rating(3))
 	}
-	if !math.IsNaN(fit.Rating(9)) || !math.IsNaN(fit.SD(9)) || !(fit.SD(1) > 0) || !(fit.DrawElo() > 0) || !(fit.Levels() > 0) {
-		t.Errorf("Rating(9) %g, SD(9) %g, SD(1) %g, draw setting %g, levels %g",
-			fit.Rating(9), fit.SD(9), fit.SD(1), fit.DrawElo(), fit.Levels())
+	if !math.IsNaN(fit.Rating(9)) || !math.IsNaN(fit.SD(9)) || !(fit.SD(1) > 0) || !(fit.DrawElo() > 0) {
+		t.Errorf("Rating(9) %g, SD(9) %g, SD(1) %g, draw setting %g",
+			fit.Rating(9), fit.SD(9), fit.SD(1), fit.DrawElo())
 	}
 	// The fit's results are saved with the list.
 	if l.Entries[0].Rating != fit.Rating(1) || l.DrawElo != fit.DrawElo() {
@@ -128,6 +128,108 @@ func TestFit(t *testing.T) {
 	l.AddEntry("Dune")
 	if again, _ := l.Fit(); again == fit || math.IsNaN(again.Rating(4)) {
 		t.Error("adding an entry kept the old fit")
+	}
+}
+
+func TestRemoveRestoreUndo(t *testing.T) {
+	l := mustNew(t, "Films", "Alien", "Brazil", "Casablanca", "Dune")
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 2, 3, FirstBetter)
+	mustRecord(t, l, 3, 4, AboutSame)
+	l.SetFocus([]int{2, 4})
+	before, _ := l.Fit()
+
+	// Removing Brazil hides it but keeps its answers, so the fit is the
+	// same and Alien still sits above Casablanca through it.
+	if err := l.RemoveEntry(2); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := l.Fit(); after != before || len(l.Comparisons) != 3 {
+		t.Error("removing an entry changed the fit or dropped answers")
+	}
+	if !slices.Equal(l.Focus, []int{4}) {
+		t.Errorf("focus after removing entry 2 is %v, want [4]", l.Focus)
+	}
+	var shown []int
+	for _, e := range l.Shown() {
+		shown = append(shown, e.ID)
+	}
+	if !slices.Equal(shown, []int{1, 3, 4}) {
+		t.Errorf("shown entries %v, want [1 3 4]", shown)
+	}
+	rows, err := l.Tiers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var placed []int
+	for _, r := range rows {
+		placed = append(placed, r.Entries...)
+	}
+	if !slices.Equal(placed, []int{1, 3, 4}) && !slices.Equal(placed, []int{1, 4, 3}) {
+		t.Errorf("tier list holds %v; want entries 1, 3 and 4 with 1 first", placed)
+	}
+	rng := rand.New(rand.NewPCG(1, 2))
+	for range 20 {
+		a, b, err := l.NextPair(rng)
+		if err != nil || a == 2 || b == 2 {
+			t.Fatalf("NextPair gave %d, %d, %v with entry 2 removed", a, b, err)
+		}
+	}
+	if l.Record(2, 1, FirstBetter) == nil || l.SetFocus([]int{2}) == nil {
+		t.Error("recording or focusing on a removed entry: want errors")
+	}
+	if l.RemoveEntry(9) == nil || l.RestoreEntry(9) == nil {
+		t.Error("removing or restoring a missing entry: want errors")
+	}
+	if err := l.RestoreEntry(2); err != nil || len(l.Shown()) != 4 {
+		t.Errorf("RestoreEntry: %v, %d shown", err, len(l.Shown()))
+	}
+
+	// Undo takes back answers newest first, until there are none.
+	if c, ok := l.Undo(); !ok || c != (Comparison{3, 4, AboutSame}) || len(l.Comparisons) != 2 {
+		t.Errorf("Undo gave %v, %v, leaving %d answers", c, ok, len(l.Comparisons))
+	}
+	if again, _ := l.Fit(); again == before {
+		t.Error("undo kept the old fit")
+	}
+	l.Undo()
+	l.Undo()
+	if _, ok := l.Undo(); ok {
+		t.Error("Undo with no answers left reported one")
+	}
+
+	if err := l.SetName("  Movies "); err != nil || l.Name != "Movies" || l.SetName(" ") == nil {
+		t.Errorf("SetName: %v, name %q", err, l.Name)
+	}
+}
+
+func TestCountsAndLevels(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C")
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 2, 3, FirstBetter)
+	if c := l.Counts(); c[1] != 1 || c[2] != 2 || c[3] != 1 {
+		t.Errorf("counts %v", c)
+	}
+	if _, ready, err := l.Levels(); err != nil || ready {
+		t.Errorf("after two answers: ready %v, error %v; want not ready", ready, err)
+	}
+	for range 2 {
+		mustRecord(t, l, 1, 2, FirstBetter)
+		mustRecord(t, l, 2, 3, FirstBetter)
+		mustRecord(t, l, 1, 3, FirstBetter)
+	}
+	levels, ready, err := l.Levels()
+	if err != nil || !ready || !(levels > 1) {
+		t.Errorf("after eight answers: %g levels, ready %v, error %v", levels, ready, err)
+	}
+	// A removed entry no longer counts, even without enough answers.
+	l.AddEntry("D")
+	if _, ready, _ := l.Levels(); ready {
+		t.Error("a new entry with no answers should hold the readout back")
+	}
+	l.RemoveEntry(4)
+	if _, ready, _ := l.Levels(); !ready {
+		t.Error("a removed entry should not hold the readout back")
 	}
 }
 

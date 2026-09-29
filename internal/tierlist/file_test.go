@@ -15,6 +15,8 @@ func TestFileFormat(t *testing.T) {
 	l := mustNew(t, "Films & shows", "Alien", "Brazil")
 	mustRecord(t, l, 1, 2, FirstBetter)
 	mustRecord(t, l, 2, 1, AboutSame)
+	l.AddEntry("Casablanca")
+	l.RemoveEntry(3)
 	l.SetFocus([]int{2})
 	got, err := l.encode()
 	if err != nil {
@@ -26,7 +28,8 @@ func TestFileFormat(t *testing.T) {
   "name": "Films & shows",
   "entries": [
     {"id":1,"name":"Alien"},
-    {"id":2,"name":"Brazil"}
+    {"id":2,"name":"Brazil"},
+    {"id":3,"name":"Casablanca","removed":true}
   ],
   "comparisons": [
     {"a":1,"b":2,"answer":"a"},
@@ -172,6 +175,7 @@ func TestLoadRejects(t *testing.T) {
 		{"ID 0", `{"id":2`, `{"id":0`, "IDs start at 1"},
 		{"blank entry name", `"name":"B"`, `"name":""`, "entry 2 has no name"},
 		{"focus on a missing entry", `"display"`, `"focus":[5],"display"`, "focus: entry 5"},
+		{"focus on a removed entry", `{"id":2,"name":"B"}],`, `{"id":2,"name":"B","removed":true}],"focus":[2],`, "focus: entry 2"},
 		{"negative draw setting", `"display"`, `"drawElo":-1,"display"`, "draw setting"},
 		{"bad template", `"maxStars":5`, `"maxStars":2`, "display:"},
 		{"bad convention", `"top-closed"`, `"sideways"`, "display:"},
@@ -216,7 +220,9 @@ func TestCreateAndLists(t *testing.T) {
 	l, _ := Load(filepath.Join(dir, "films.json"))
 	l.AddEntry("Alien")
 	l.AddEntry("Brazil")
+	l.AddEntry("Casablanca")
 	mustRecord(t, l, 1, 2, FirstBetter)
+	l.RemoveEntry(3)
 	l.Save(filepath.Join(dir, "films.json"))
 	for name, data := range map[string]string{
 		"broken.json":          "{",

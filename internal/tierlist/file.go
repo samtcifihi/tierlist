@@ -278,7 +278,7 @@ func fileName(name string) string {
 type Summary struct {
 	Path        string
 	Name        string
-	Entries     int
+	Entries     int // not counting removed entries
 	Comparisons int
 	Modified    time.Time
 	// Err is set if the file could not be loaded; the other fields except
@@ -298,7 +298,7 @@ func Lists(dir string) ([]Summary, error) {
 	}
 	var out []Summary
 	for _, de := range des {
-		if de.IsDir() || !strings.EqualFold(filepath.Ext(de.Name()), ".json") {
+		if de.IsDir() || filepath.Ext(de.Name()) != ".json" {
 			continue
 		}
 		s := Summary{Path: filepath.Join(dir, de.Name())}
@@ -308,7 +308,7 @@ func Lists(dir string) ([]Summary, error) {
 		if l, err := Load(s.Path); err != nil {
 			s.Err = err
 		} else {
-			s.Name, s.Entries, s.Comparisons = l.Name, len(l.Entries), len(l.Comparisons)
+			s.Name, s.Entries, s.Comparisons = l.Name, len(l.Shown()), len(l.Comparisons)
 		}
 		out = append(out, s)
 	}

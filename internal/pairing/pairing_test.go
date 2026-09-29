@@ -16,9 +16,9 @@ func fit(t testing.TB, n int, h []bayeselo.Comparison) *bayeselo.Result {
 	return res
 }
 
-func next(t testing.TB, res *bayeselo.Result, h []bayeselo.Comparison, focus []int, rng *rand.Rand) [2]int {
+func next(t testing.TB, res *bayeselo.Result, h []bayeselo.Comparison, opts Options, rng *rand.Rand) [2]int {
 	t.Helper()
-	a, b, err := Next(res, h, focus, rng)
+	a, b, err := Next(res, h, opts, rng)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func answer(truth []float64, drawElo float64, a, b int, rng *rand.Rand) bayeselo
 
 // play asks count questions chosen by Next, answers them from the true
 // ratings, and returns h with them appended.
-func play(t testing.TB, truth []float64, h []bayeselo.Comparison, focus []int, count int, rng *rand.Rand) []bayeselo.Comparison {
+func play(t testing.TB, truth []float64, h []bayeselo.Comparison, opts Options, count int, rng *rand.Rand) []bayeselo.Comparison {
 	t.Helper()
 	var res *bayeselo.Result
 	for range count {
@@ -50,7 +50,7 @@ func play(t testing.TB, truth []float64, h []bayeselo.Comparison, focus []int, c
 		if res, err = bayeselo.Fit(len(truth), h, res); err != nil {
 			t.Fatal(err)
 		}
-		p := next(t, res, h, focus, rng)
+		p := next(t, res, h, opts, rng)
 		h = append(h, bayeselo.Comparison{A: p[0], B: p[1], Outcome: answer(truth, 120, p[0], p[1], rng)})
 	}
 	return h
@@ -67,18 +67,20 @@ func randomTruth(n int, rng *rand.Rand) []float64 {
 func TestNextRejects(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 1))
 	for _, n := range []int{0, 1} {
-		if _, _, err := Next(fit(t, n, nil), nil, nil, rng); err == nil {
+		if _, _, err := Next(fit(t, n, nil), nil, Options{}, rng); err == nil {
 			t.Errorf("%d entries: want an error", n)
 		}
 	}
 	res := fit(t, 3, nil)
 	for _, h := range [][]bayeselo.Comparison{{cmp(0, 3)}, {cmp(-1, 0)}, {cmp(1, 1)}} {
-		if _, _, err := Next(res, h, nil, rng); err == nil {
+		if _, _, err := Next(res, h, Options{}, rng); err == nil {
 			t.Errorf("history %v: want an error", h)
 		}
 	}
-	if _, _, err := Next(res, nil, []int{3}, rng); err == nil {
-		t.Error("focus on a missing entry: want an error")
+	for _, opts := range []Options{{Focus: []int{3}}, {Hidden: []int{-1}}, {Hidden: []int{0, 1}}, {Focus: []int{2}, Hidden: []int{2}}} {
+		if _, _, err := Next(res, nil, opts, rng); err == nil {
+			t.Errorf("%+v: want an error", opts)
+		}
 	}
 }
 
@@ -89,7 +91,7 @@ func TestFirstPairIsRandom(t *testing.T) {
 	rng := rand.New(rand.NewPCG(2, 2))
 	seen := make(map[[2]int]int)
 	for range 1200 {
-		seen[next(t, res, nil, nil, rng)]++
+		seen[next(t, res, nil, Options{}, rng)]++
 	}
 	if len(seen) != 12 {
 		t.Fatalf("saw %d ordered pairs, want all 12: %v", len(seen), seen)
@@ -106,7 +108,7 @@ func TestPicksBestScore(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 3))
 	for trial := range 20 {
 		truth := randomTruth(8, rng)
-		h := play(t, truth, nil, nil, 10+trial, rng)
+		h := play(t, truth, nil, Options{}, 10+trial, rng)
 		res := fit(t, len(truth), h)
 		perEntry := make([]int, len(truth))
 		perPair := make(map[[2]int]int)
@@ -124,7 +126,7 @@ func TestPicksBestScore(t *testing.T) {
 				}
 			}
 		}
-		p := next(t, res, h, nil, rng)
+		p := next(t, res, h, Options{}, rng)
 		k := key(p[0], p[1])
 		got := score(res, k[0], k[1], perPair[k], perEntry[k[0]] == 0 || perEntry[k[1]] == 0)
 		if k == last || got < best*(1-tieTolerance) {
@@ -141,35 +143,42 @@ func TestAdjustments(t *testing.T) {
 		name  string
 		n     int
 		h     []bayeselo.Comparison
-		focus []int
+		opts  Options
 		allow [][2]int // the pairs Next may pick
 	}{
 		{"repeats lose to fresh pairs, and the last pair is skipped", 4,
-			[]bayeselo.Comparison{cmp(0, 1), cmp(0, 1), cmp(0, 1), cmp(2, 3)}, nil,
+			[]bayeselo.Comparison{cmp(0, 1), cmp(0, 1), cmp(0, 1), cmp(2, 3)}, Options{},
 			[][2]int{{0, 2}, {0, 3}, {1, 2}, {1, 3}}},
 		{"the only unrepeated pair wins", 3,
-			[]bayeselo.Comparison{cmp(0, 1), cmp(1, 2)}, nil,
+			[]bayeselo.Comparison{cmp(0, 1), cmp(1, 2)}, Options{},
 			[][2]int{{0, 2}}},
 		{"repeats are allowed", 3,
-			[]bayeselo.Comparison{cmp(0, 1), cmp(1, 2), cmp(0, 2)}, nil,
+			[]bayeselo.Comparison{cmp(0, 1), cmp(1, 2), cmp(0, 2)}, Options{},
 			[][2]int{{0, 1}, {1, 2}}},
 		{"the last pair again, when it is the only pair", 2,
-			[]bayeselo.Comparison{cmp(0, 1)}, nil,
+			[]bayeselo.Comparison{cmp(0, 1)}, Options{},
 			[][2]int{{0, 1}}},
 		// Without the bonus, the unrepeated pair (1, 2) would tie with these.
 		{"uncompared entries first", 4,
-			[]bayeselo.Comparison{cmp(0, 1), cmp(0, 2)}, nil,
+			[]bayeselo.Comparison{cmp(0, 1), cmp(0, 2)}, Options{},
 			[][2]int{{0, 3}, {1, 3}, {2, 3}}},
-		{"focus", 5, nil, []int{4},
+		{"focus", 5, nil, Options{Focus: []int{4}},
 			[][2]int{{0, 4}, {1, 4}, {2, 4}, {3, 4}}},
-		{"focus on two entries", 5, []bayeselo.Comparison{cmp(1, 3)}, []int{1, 3},
+		{"focus on two entries", 5, []bayeselo.Comparison{cmp(1, 3)}, Options{Focus: []int{1, 3}},
 			[][2]int{{0, 1}, {1, 2}, {1, 4}, {0, 3}, {2, 3}, {3, 4}}},
+		{"hidden entries are skipped", 4, nil, Options{Hidden: []int{1, 3}},
+			[][2]int{{0, 2}}},
+		{"hidden and focus together", 5, nil, Options{Focus: []int{0}, Hidden: []int{2, 4}},
+			[][2]int{{0, 1}, {0, 3}}},
+		{"the last pair again, when hiding leaves nothing else", 4,
+			[]bayeselo.Comparison{cmp(0, 3)}, Options{Hidden: []int{1, 2}},
+			[][2]int{{0, 3}}},
 	}
 	for _, tt := range tests {
 		res := fit(t, tt.n, nil)
 		seen := make(map[[2]int]bool)
 		for range 200 {
-			p := next(t, res, tt.h, tt.focus, rng)
+			p := next(t, res, tt.h, tt.opts, rng)
 			k := key(p[0], p[1])
 			ok := false
 			for _, a := range tt.allow {
@@ -190,7 +199,7 @@ func TestAdjustments(t *testing.T) {
 func TestSession(t *testing.T) {
 	rng := rand.New(rand.NewPCG(5, 5))
 	truth := randomTruth(12, rng)
-	h := play(t, truth, nil, nil, 60, rng)
+	h := play(t, truth, nil, Options{}, 60, rng)
 
 	// Uncompared entries pair up first, so all 12 are compared within 6
 	// answers.
@@ -209,7 +218,7 @@ func TestSession(t *testing.T) {
 
 	// Entries added now are compared straight away.
 	truth = append(truth, 100, -50)
-	h2 := play(t, truth, h, nil, 2, rng)
+	h2 := play(t, truth, h, Options{}, 2, rng)
 	added := map[int]bool{}
 	for _, c := range h2[len(h):] {
 		added[c.A], added[c.B] = true, true
@@ -219,7 +228,7 @@ func TestSession(t *testing.T) {
 	}
 
 	// In focus mode every pair includes a focused entry.
-	for _, c := range play(t, truth, h2, []int{12, 13}, 20, rng)[len(h2):] {
+	for _, c := range play(t, truth, h2, Options{Focus: []int{12, 13}}, 20, rng)[len(h2):] {
 		if c.A < 12 && c.B < 12 {
 			t.Errorf("in focus mode, asked about %d and %d", c.A, c.B)
 		}
@@ -245,7 +254,7 @@ func TestBeatsRandomPairs(t *testing.T) {
 	for s := range sessions {
 		rng := rand.New(rand.NewPCG(uint64(s), 6))
 		truth := randomTruth(n, rng)
-		smart += wrong(fit(t, n, play(t, truth, nil, nil, answers, rng)), truth)
+		smart += wrong(fit(t, n, play(t, truth, nil, Options{}, answers, rng)), truth)
 
 		var h []bayeselo.Comparison
 		for range answers {

@@ -51,6 +51,16 @@ func DefaultDisplay() Display {
 	}
 }
 
+// Check reports whether the options describe a usable template and
+// placement.
+func (d Display) Check() error {
+	if _, err := d.template(); err != nil {
+		return err
+	}
+	_, err := d.options()
+	return err
+}
+
 // template builds the tier template the options describe.
 func (d Display) template() (tier.Template, error) {
 	var c tier.Convention

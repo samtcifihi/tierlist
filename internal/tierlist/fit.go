@@ -39,9 +39,28 @@ func (f *Fit) SD(id int) float64 {
 // DrawElo returns the fitted draw setting, in Elo.
 func (f *Fit) DrawElo() float64 { return f.res.DrawElo }
 
-// Levels returns the number of levels the user tells apart in the list;
-// see bayeselo.Result.Levels.
-func (f *Fit) Levels() float64 { return f.res.Levels() }
+// LevelsAfter is how many answers every shown entry needs before the
+// levels readout means much; before that, the ratings have not spread out.
+const LevelsAfter = 3
+
+// Levels returns how many levels of quality the user tells apart among the
+// shown entries (see bayeselo.Result.Levels), and whether every shown entry
+// has at least LevelsAfter answers yet.
+func (l *List) Levels() (levels float64, ready bool, err error) {
+	fit, err := l.Fit()
+	if err != nil {
+		return 0, false, err
+	}
+	counts := l.Counts()
+	shown := l.Shown()
+	ready = len(shown) >= 2
+	ratings := make([]float64, len(shown))
+	for k, e := range shown {
+		ratings[k] = fit.Rating(e.ID)
+		ready = ready && counts[e.ID] >= LevelsAfter
+	}
+	return (&bayeselo.Result{Ratings: ratings, DrawElo: fit.DrawElo()}).Levels(), ready, nil
+}
 
 // Fit returns the Bayes Elo fit of the list's comparisons, redoing it if
 // the entries or comparisons have changed since the last one. It also
@@ -86,18 +105,23 @@ func (l *List) history(index map[int]int) []bayeselo.Comparison {
 }
 
 // NextPair returns the IDs of the next two entries to compare, in the
-// order to show them, honoring focus mode. rng breaks ties and picks the
-// sides.
+// order to show them, honoring focus mode and leaving out removed entries.
+// rng breaks ties and picks the sides.
 func (l *List) NextPair(rng *rand.Rand) (first, second int, err error) {
 	fit, err := l.Fit()
 	if err != nil {
 		return 0, 0, err
 	}
-	focus := make([]int, len(l.Focus))
-	for k, id := range l.Focus {
-		focus[k] = fit.index[id]
+	var opts pairing.Options
+	for _, id := range l.Focus {
+		opts.Focus = append(opts.Focus, fit.index[id])
 	}
-	a, b, err := pairing.Next(fit.res, l.history(fit.index), focus, rng)
+	for i, e := range l.Entries {
+		if e.Removed {
+			opts.Hidden = append(opts.Hidden, i)
+		}
+	}
+	a, b, err := pairing.Next(fit.res, l.history(fit.index), opts, rng)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -110,8 +134,8 @@ type Row struct {
 	Entries []int // entry IDs, best first
 }
 
-// Tiers places the entries into tiers using the list's display options,
-// best tier first. With fewer than two entries it returns
+// Tiers places the shown entries into tiers using the list's display
+// options, best tier first. With fewer than two shown entries it returns
 // tier.ErrTooFewEntries.
 func (l *List) Tiers() ([]Row, error) {
 	tmpl, err := l.Display.template()
@@ -126,10 +150,13 @@ func (l *List) Tiers() ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Rank the entries best first; equal ratings keep the list's order.
-	order := make([]int, len(l.Entries))
-	for i := range order {
-		order[i] = i
+	// Rank the shown entries best first; equal ratings keep the list's
+	// order.
+	var order []int
+	for i, e := range l.Entries {
+		if !e.Removed {
+			order = append(order, i)
+		}
 	}
 	r := fit.res.Ratings
 	slices.SortStableFunc(order, func(i, j int) int { return cmp.Compare(r[j], r[i]) })

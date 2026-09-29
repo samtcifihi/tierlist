@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 )
 
@@ -24,6 +25,10 @@ const (
 type Entry struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+	// Removed entries are left out of the tier list, focus mode and new
+	// comparisons, but their answers still count toward the other entries'
+	// ratings.
+	Removed bool `json:"removed,omitempty"`
 	// Rating is the entry's rating from the last fit, in Elo. It is saved
 	// only to speed up the next fit.
 	Rating float64 `json:"rating,omitempty"`
@@ -64,6 +69,16 @@ func New(name string) (*List, error) {
 	return &List{Name: name, Entries: []Entry{}, Comparisons: []Comparison{}, Display: DefaultDisplay()}, nil
 }
 
+// SetName renames the list.
+func (l *List) SetName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("a list needs a name")
+	}
+	l.Name = name
+	return nil
+}
+
 // AddEntry adds an entry called name and returns its ID.
 func (l *List) AddEntry(name string) (int, error) {
 	name = strings.TrimSpace(name)
@@ -85,44 +100,119 @@ func (l *List) RenameEntry(id int, name string) error {
 	if name == "" {
 		return errors.New("an entry needs a name")
 	}
-	for i := range l.Entries {
-		if l.Entries[i].ID == id {
-			l.Entries[i].Name = name
-			return nil
+	e, err := l.entry(id)
+	if err != nil {
+		return err
+	}
+	e.Name = name
+	return nil
+}
+
+// RemoveEntry removes the entry with ID id from the tier list, focus mode
+// and new comparisons. Its answers still count toward the other entries'
+// ratings, and RestoreEntry brings it back.
+func (l *List) RemoveEntry(id int) error {
+	e, err := l.entry(id)
+	if err != nil {
+		return err
+	}
+	e.Removed = true
+	if l.Focus = slices.DeleteFunc(l.Focus, func(f int) bool { return f == id }); len(l.Focus) == 0 {
+		l.Focus = nil
+	}
+	return nil
+}
+
+// RestoreEntry brings back a removed entry.
+func (l *List) RestoreEntry(id int) error {
+	e, err := l.entry(id)
+	if err != nil {
+		return err
+	}
+	e.Removed = false
+	return nil
+}
+
+// Shown returns the entries that have not been removed, in list order.
+func (l *List) Shown() []Entry {
+	var shown []Entry
+	for _, e := range l.Entries {
+		if !e.Removed {
+			shown = append(shown, e)
 		}
 	}
-	return fmt.Errorf("there is no entry %d", id)
+	return shown
 }
 
 // Record adds the answer to a comparison of entries a (shown first) and b
-// (shown second).
+// (shown second), neither of which may have been removed.
 func (l *List) Record(a, b int, answer Answer) error {
 	c := Comparison{A: a, B: b, Answer: answer}
 	if err := checkComparison(c, l.ids()); err != nil {
 		return err
+	}
+	for _, id := range []int{a, b} {
+		if e, _ := l.entry(id); e.Removed {
+			return fmt.Errorf("entry %d has been removed", id)
+		}
 	}
 	l.Comparisons = append(l.Comparisons, c)
 	l.fit = nil
 	return nil
 }
 
+// Undo takes back the most recent answer and returns it. It reports false
+// if there are no answers.
+func (l *List) Undo() (Comparison, bool) {
+	k := len(l.Comparisons)
+	if k == 0 {
+		return Comparison{}, false
+	}
+	c := l.Comparisons[k-1]
+	l.Comparisons = l.Comparisons[:k-1]
+	l.fit = nil
+	return c, true
+}
+
+// Counts returns how many answers involve each entry, by ID.
+func (l *List) Counts() map[int]int {
+	counts := make(map[int]int, len(l.Entries))
+	for _, c := range l.Comparisons {
+		counts[c.A]++
+		counts[c.B]++
+	}
+	return counts
+}
+
 // SetFocus turns on focus mode for the entries with the given IDs, or
-// returns to the default mode if there are none.
+// returns to the default mode if there are none. Removed entries cannot be
+// focused on.
 func (l *List) SetFocus(ids []int) error {
-	known := l.ids()
 	var focus []int
-	seen := make(map[int]bool)
 	for _, id := range ids {
-		if !known[id] {
-			return fmt.Errorf("there is no entry %d", id)
+		e, err := l.entry(id)
+		if err != nil {
+			return err
 		}
-		if !seen[id] {
-			seen[id] = true
+		if e.Removed {
+			return fmt.Errorf("entry %d has been removed", id)
+		}
+		if !slices.Contains(focus, id) {
 			focus = append(focus, id)
 		}
 	}
 	l.Focus = focus
 	return nil
+}
+
+// entry returns the entry with ID id.
+func (l *List) entry(id int) (*Entry, error) {
+	for i := range l.Entries {
+		if l.Entries[i].ID == id {
+			return &l.Entries[i], nil
+		}
+	}
+	return nil, fmt.Errorf("there is no entry %d", id)
 }
 
 // ids returns the set of entry IDs.
@@ -174,18 +264,15 @@ func (l *List) validate() error {
 	}
 	seen := make(map[int]bool)
 	for _, id := range l.Focus {
-		if !known[id] || seen[id] {
-			return fmt.Errorf("focus: entry %d is missing or listed twice", id)
+		if e, err := l.entry(id); err != nil || e.Removed || seen[id] {
+			return fmt.Errorf("focus: entry %d is missing, removed or listed twice", id)
 		}
 		seen[id] = true
 	}
 	if !(l.DrawElo >= 0) || math.IsInf(l.DrawElo, 1) {
 		return fmt.Errorf("draw setting %v", l.DrawElo)
 	}
-	if _, err := l.Display.template(); err != nil {
-		return fmt.Errorf("display: %w", err)
-	}
-	if _, err := l.Display.options(); err != nil {
+	if err := l.Display.Check(); err != nil {
 		return fmt.Errorf("display: %w", err)
 	}
 	return nil
