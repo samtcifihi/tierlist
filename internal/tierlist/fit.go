@@ -16,6 +16,7 @@ import (
 type Fit struct {
 	res   *bayeselo.Result
 	index map[int]int // entry ID to index in res
+	scale float64     // shown points per Elo
 }
 
 // Rating returns the rating of the entry with ID id, in Elo, or NaN if
@@ -38,6 +39,40 @@ func (f *Fit) SD(id int) float64 {
 
 // DrawElo returns the fitted draw setting, in Elo.
 func (f *Fit) DrawElo() float64 { return f.res.DrawElo }
+
+// The pages show ratings in points rather than Elo. An entry not yet
+// compared shows CenterPoints, as the dummy entry would, and a gap of
+// TwoToOnePoints means the higher entry's expected score is twice the
+// lower's (see bayeselo.ExpectedScore), whatever the draw setting.
+const (
+	CenterPoints   = 1500
+	TwoToOnePoints = 100
+)
+
+// PointsPerElo returns how many shown points one Elo makes at the fitted
+// draw setting.
+func (f *Fit) PointsPerElo() float64 { return f.scale }
+
+// Points returns the rating of the entry with ID id as the pages show it,
+// or NaN if there is no such entry.
+func (f *Fit) Points(id int) float64 { return CenterPoints + f.scale*f.Rating(id) }
+
+// PointsSD returns the standard deviation of the entry's rating in shown
+// points, or NaN if there is no such entry.
+func (f *Fit) PointsSD(id int) float64 { return f.scale * f.SD(id) }
+
+// SameChance returns the draw setting as the pages show it: the chance
+// that two equally rated entries are judged about the same.
+func (f *Fit) SameChance() float64 {
+	_, same, _ := bayeselo.Probabilities(0, f.res.DrawElo)
+	return same
+}
+
+// drawMarginElo converts a draw-margin in shown points to Elo, raising it
+// to at least MinDrawMargin.
+func (f *Fit) drawMarginElo(points float64) float64 {
+	return max(points/f.scale, MinDrawMargin)
+}
 
 // LevelsAfter is how many answers every shown entry needs before the
 // levels readout means much; before that, the ratings have not spread out.
@@ -84,7 +119,8 @@ func (l *List) Fit() (*Fit, error) {
 		l.Entries[i].Rating = res.Ratings[i]
 	}
 	l.DrawElo = res.DrawElo
-	l.fit = &Fit{res: res, index: index}
+	scale := TwoToOnePoints / bayeselo.ScoreGap(2, res.DrawElo)
+	l.fit = &Fit{res: res, index: index, scale: scale}
 	return l.fit, nil
 }
 
@@ -150,6 +186,7 @@ func (l *List) Tiers() ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts.DrawMargin = fit.drawMarginElo(opts.DrawMargin)
 	// Rank the shown entries best first; equal ratings keep the list's
 	// order.
 	var order []int

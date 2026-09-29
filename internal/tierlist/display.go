@@ -21,7 +21,7 @@ type Display struct {
 	// Convention is "top-closed" or "bottom-closed".
 	Convention string `json:"convention"`
 	// DrawMargin groups entries whose ratings differ by at most this many
-	// Elo.
+	// points, as the pages show ratings (see Fit.Points).
 	DrawMargin float64 `json:"drawMargin"`
 	// GroupRule is "middle-entry" or "alternate".
 	GroupRule string `json:"groupRule"`
@@ -99,8 +99,8 @@ func (d Display) template() (tier.Template, error) {
 	return tier.Template{}, fmt.Errorf("unknown template kind %q", t.Kind)
 }
 
-// options returns the placement options, with the draw-margin raised to at
-// least MinDrawMargin.
+// options returns the placement options, with the draw-margin still in
+// shown points.
 func (d Display) options() (tier.Options, error) {
 	o := tier.Options{DrawMargin: d.DrawMargin}
 	switch d.GroupRule {
@@ -122,6 +122,5 @@ func (d Display) options() (tier.Options, error) {
 	if !(o.DrawMargin >= 0) {
 		return o, fmt.Errorf("draw-margin %v is below 0", o.DrawMargin)
 	}
-	o.DrawMargin = max(o.DrawMargin, MinDrawMargin)
 	return o, nil
 }

@@ -121,6 +121,32 @@ func Probabilities(diff, drawElo float64) (better, same, worse float64) {
 	return better, same, worse
 }
 
+// ExpectedScore returns the expected score of an entry rated diff Elo
+// above another, with draw setting drawElo ≥ 0, counting "about the same"
+// as half: P(better) + ½ P(about the same), which is
+// ½ f(diff - θ) + ½ f(diff + θ).
+func ExpectedScore(diff, drawElo float64) float64 {
+	d, t := diff*eloToNat, drawElo*eloToNat
+	return (sigmoid(d-t) + sigmoid(d+t)) / 2
+}
+
+// ScoreGap returns the rating gap, in Elo, at which the higher entry's
+// expected score (see ExpectedScore) is odds times the lower entry's, with
+// draw setting drawElo ≥ 0. odds must be positive. Without draws the gap
+// is 400·log10(odds); draws widen it.
+func ScoreGap(odds, drawElo float64) float64 {
+	// With x = 10^(gap/400) and c = cosh θ (θ in natural units), the
+	// expected score is odds/(1 + odds) where x² - (odds-1)·c·x - odds = 0.
+	// Its positive root is taken in whichever form avoids cancellation.
+	b := (odds - 1) * math.Cosh(drawElo*eloToNat)
+	q := math.Sqrt(b*b + 4*odds)
+	x := (b + q) / 2
+	if b < 0 {
+		x = 2 * odds / (q - b)
+	}
+	return math.Log(x) / eloToNat
+}
+
 // Fit returns the Bayes Elo ratings of n entries given the comparisons.
 // If start holds n ratings, the search starts from its ratings and draw
 // setting. The result is the same either way; a start near it is only

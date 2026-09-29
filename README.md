@@ -12,7 +12,7 @@ Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tie
 
 - **Your lists:** the start page lists your saved tier lists and creates new ones.
 - **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating, shown around 1500, and its uncertainty.
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
@@ -39,7 +39,7 @@ Sorting uses **Bayes Elo**.
 
 Every real entry starts with a prior of one win and one loss against a single dummy entry. The dummy exists only for the prior; it is not part of the user-facing list and is not shown on the tierlist.
 
-The dummy's rating is fixed at 0, so every rating is relative to it. The pages show ratings with 1500 added, so an entry nobody has compared yet shows 1500. Differences between ratings, such as the ± uncertainty, the draw setting and the draw-margin, are the same either way.
+The dummy's rating is fixed at 0, so every rating is relative to it. The pages show ratings on a scale of their own, where the dummy, and so any entry nobody has compared yet, is at 1500 (see [Shown ratings](#shown-ratings)).
 
 ### Comparisons
 
@@ -63,33 +63,54 @@ For entries A and B with ratings `rA` and `rB`, and a **draw setting** `θ ≥ 0
 
 where `f(x) = 1 / (1 + 10^(-x/400))` is the usual Elo curve. The larger `θ`, the more room there is for "about the same": between two equally rated entries its probability is `1 - 2 f(-θ)`. Which entry was shown first makes no difference.
 
-The curve fixes the scale: without draws, every 400 points of gap multiplies the odds of the higher entry being called better by 10, so 2:1 is about 120 points (`400 log10(2)`) and 3:1 about 191. With draws, the odds at a given gap also depend on `θ` and on how "about the same" is counted. With `θ` at 120, for example, "better" comes up twice as often as "worse" at a gap of about 91 points, while an expected score of 2:1, counting "about the same" as half, takes about 135.
+The curve fixes the scale in Elo: without draws, every 400 Elo of gap multiplies the odds of the higher entry being called better by 10, so 2:1 is about 120 Elo (`400 log10(2)`) and 3:1 about 191. With draws, the odds at a given gap also depend on `θ` and on how "about the same" is counted. With `θ` at 120, for example, "better" comes up twice as often as "worse" at a gap of about 91 Elo, while an expected score of 2:1, counting "about the same" as half, takes about 135. So the pages don't show Elo, but points on a scale that keeps an expected score of 2:1 at 100 points (see [Shown ratings](#shown-ratings)).
 
 ### Draw setting
 
-The draw setting says how close two entries have to be for the user to call them about the same. Two ways to picture it, both exact in the model:
+The draw setting says how close two entries have to be for the user to call them about the same. The pages show it as a percentage: how often two equally rated entries are called about the same, `1 - 2 f(-θ)`.
+
+Two ways to picture `θ` itself, both exact in the model:
 
 - It is the rating gap at which "better" becomes a coin flip. An entry rated `θ` above another is called better only half the time; the other half splits between "about the same" and the reverse.
 - It is the width of the "too close to call" zone. Summed over every rating gap, the probability of "about the same" comes to exactly `2θ`, so each entry is roughly about the same as anything rated within `θ` of it either way.
 
-With `θ` at about 120, for example:
+With `θ` at about 120 Elo (a draw setting of 33%), for example:
 
-| Rating gap | Better | About the same | Worse |
-| --- | --- | --- | --- |
-| 0 | 33% | 33% | 33% |
-| 120 | 50% | 30% | 20% |
-| 240 | 67% | 22% | 11% |
-| 400 | 83% | 12% | 5% |
+| Gap in Elo | Gap in points | Better | About the same | Worse |
+| --- | --- | --- | --- | --- |
+| 0 | 0 | 33% | 33% | 33% |
+| 120 | 89 | 50% | 30% | 20% |
+| 240 | 178 | 67% | 22% | 11% |
+| 400 | 297 | 83% | 12% | 5% |
 
 Seen the other way round, a list whose ratings spread over `R` Elo has room for about `R / (2θ)` levels the user can tell apart. Exactly, the number of **levels** is 1 divided by the probability that two randomly chosen entries of the list would be called about the same. (The rule of thumb gets rough when `R` is not much bigger than `θ`.)
 
 The draw setting is estimated from the user's answers, along with the ratings, rather than chosen. A number of levels given up front would not pin it down: converting it needs the list's spread in Elo, which only the answers reveal, and a list may cover only part of its domain, so the same user says "about the same" more often in a list of close favorites than in a broad one. The answers measure `θ` directly, separately for each list, including how readily the user answers "about the same". Pairs are chosen to be close, so the share of "about the same" answers runs above the rate for random pairs; the model allows for that by judging each answer against its pair's rating gap.
 
-The draw setting has a prior of its own: one win, one loss and one draw between two equally rated entries. That prior alone puts `θ` at `400 log10(2)` (about 120 Elo), where "about the same" is exactly as likely as either side being better. It also keeps `θ` above 0 when the user has never answered "about the same", and finite when every answer has been.
+The draw setting has a prior of its own: one win, one loss and one draw between two equally rated entries. That prior alone puts `θ` at `400 log10(2)` (about 120 Elo, a draw setting of 33%), where "about the same" is exactly as likely as either side being better. It also keeps `θ` above 0 when the user has never answered "about the same", and finite when every answer has been.
 
 The entries' prior games against the dummy use the plain Elo curve (`θ = 0`), so they say nothing about the draw setting.
 
 **Levels readout.** Once every entry has been compared at least 3 times, the program shows how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. (Before that, the ratings have not spread out yet and the number would be misleadingly low.)
+
+### Shown ratings
+
+The pages show ratings in **points** rather than Elo, on a scale pinned to the expected score:
+
+- A gap of 100 points means the higher entry's **expected score** is twice the lower's: counting "about the same" as half a win for each, it would score 2 to the other's 1 in the long run. In the model, the expected score of an entry `d` Elo above another is `½ f(d - θ) + ½ f(d + θ)`.
+- An entry nobody has compared yet shows 1500, where the dummy would.
+
+So a rating of `r` Elo shows as `1500 + 100 r / g` points, where `g` is the gap in Elo that gives an expected score of 2:1 at the current draw setting:
+
+```
+g = 400 log10((c + √(c² + 8)) / 2),  where c = cosh(θ ln(10) / 400)
+```
+
+`g` is about 120 Elo without draws (`400 log10(2)`), about 135 at the prior's draw setting of 33%, and about 157 at 50%. The ± uncertainty and the draw-margin are in points too.
+
+Other gaps mean nearly the same at any draw setting up to 50%: 3:1 takes about 155 to 158 points and 10:1 about 300 to 330. Without draws, every further 100 points doubles the odds again, so 200 points is 4:1 and 300 is 8:1. Draws make the odds grow a little faster beyond 100 points: at 33%, 200 points is about 4.1:1 and 300 about 8.5:1.
+
+Because the scale follows the draw setting, the shown ratings all stretch or shrink a little when it moves, even for entries whose answers haven't changed. The order of the entries never depends on the scale.
 
 ### Fitting
 
@@ -107,7 +128,7 @@ By default, the program scores every candidate pair and presents the one with th
 sensitivity(A, B) × uncertainty(A - B)
 ```
 
-- **Sensitivity** is how strongly the answer depends on the exact rating gap, which is highest where the answer is hardest to predict. While the draw setting is below `400 log10(3)` (about 191 Elo, where equally rated entries are called about the same half the time), that is when the two ratings are equal. Above it, equally rated entries are called about the same more often than not, so the most informative pairs are instead roughly `θ` apart, where "better" and "about the same" are about equally likely. Precisely, sensitivity is the Fisher information of one comparison's outcome (win, draw or loss) with respect to the rating difference, under the Bayes Elo model at the current ratings.
+- **Sensitivity** is how strongly the answer depends on the exact rating gap, which is highest where the answer is hardest to predict. While the draw setting is below 50% (`θ` below `400 log10(3)`, about 191 Elo), that is when the two ratings are equal. Above it, equally rated entries are called about the same more often than not, so the most informative pairs are instead roughly `θ` apart, where "better" and "about the same" are about equally likely. Precisely, sensitivity is the Fisher information of one comparison's outcome (win, draw or loss) with respect to the rating difference, under the Bayes Elo model at the current ratings.
 - **Uncertainty** is the variance of the difference between the two ratings, `Var(A) + Var(B) - 2 Cov(A, B)`, from Bayes Elo's estimate of the ratings' covariance (the same estimate its ± error bars come from).
 
 Under the usual Gaussian approximation of the ratings, the expected information gain of a comparison is `½ ln(1 + sensitivity × uncertainty)`, so ranking by the product is ranking by expected information. It favors pairs whose answer is hard to predict and whose rating gap is not yet confidently known. Sensitivity alone is not enough: two entries with many comparisons behind them and nearly equal ratings may be a coin flip, but another answer would barely change either rating.
@@ -143,8 +164,8 @@ A list file holds:
 - the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes
 - every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
 - the focus set, while focus mode is on
-- the display options
-- each entry's last fitted rating (relative to the dummy at 0, not the 1500 the pages add) and the last draw setting, which only speed up the next fit
+- the display options, with the draw-margin in the points the pages show
+- each entry's last fitted rating and the last draw setting, in Elo as the model has them (ratings relative to the dummy at 0, not the points the pages show), which only speed up the next fit
 
 For example:
 
@@ -196,13 +217,13 @@ A tier list needs at least two entries. With one there is no span between worst 
 
 ### Draw-margin and groups
 
-The user chooses a **draw-margin** (in Bayes Elo rating units).
+The user chooses a **draw-margin**, in the points the pages show ratings in (see [Shown ratings](#shown-ratings)).
 
-Entries whose Bayes Elo ratings differ by less than or equal to the draw-margin are lumped into the same group, recursively. Adjacent merges chain: with a draw-margin of `1`, entries rated `1`, `2`, and `3` all belong to one group.
+Entries whose ratings differ by less than or equal to the draw-margin are lumped into the same group, recursively. Adjacent merges chain: with a draw-margin of `1`, entries rated `1`, `2`, and `3` all belong to one group.
 
 On a list already ordered by rating, groups are contiguous blocks.
 
-Whatever the user chooses, the program groups with a draw-margin of at least ten times the precision the ratings are computed to: `10 × 400 × 10⁻⁸ / ln(10)`, about 0.00002 Elo. Ratings that are equal in theory can come out a rounding error apart (about 10⁻¹³ Elo), and without this floor a draw-margin of 0 would let rounding split them across tiers. This is not the ± uncertainty of the ratings, which is far larger and a matter for the draw-margin the user picks.
+Whatever the user chooses, the program groups with a draw-margin of at least ten times the precision the ratings are computed to: `10 × 400 × 10⁻⁸ / ln(10)`, about 0.00002 Elo, far less than the pages can show. Ratings that are equal in theory can come out a rounding error apart (about 10⁻¹³ Elo), and without this floor a draw-margin of 0 would let rounding split them across tiers. This is not the ± uncertainty of the ratings, which is far larger and a matter for the draw-margin the user picks.
 
 ### Placing a group into a tier
 

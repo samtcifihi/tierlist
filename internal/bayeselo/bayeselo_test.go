@@ -213,6 +213,56 @@ func TestProbabilities(t *testing.T) {
 	}
 }
 
+func TestExpectedScore(t *testing.T) {
+	for _, draw := range []float64{0, 30, 120, 400} {
+		for _, diff := range []float64{-600, -120, 0, 45, 300} {
+			better, same, _ := Probabilities(diff, draw)
+			got := ExpectedScore(diff, draw)
+			if !near(got, better+same/2, 1e-12) {
+				t.Errorf("ExpectedScore(%g, %g) = %g, want %g", diff, draw, got, better+same/2)
+			}
+			if !near(got+ExpectedScore(-diff, draw), 1, 1e-12) {
+				t.Errorf("ExpectedScore(±%g, %g) do not add up to 1", diff, draw)
+			}
+		}
+	}
+}
+
+func TestScoreGap(t *testing.T) {
+	// Without draws, it is the plain Elo curve.
+	for _, odds := range []float64{2, 3, 10} {
+		if got, want := ScoreGap(odds, 0), 400*math.Log10(odds); !near(got, want, 1e-12) {
+			t.Errorf("ScoreGap(%g, 0) = %g, want %g", odds, got, want)
+		}
+	}
+	// With the prior's draw setting, cosh θ is 5/4, and 2:1 takes
+	// 400·log10((5 + √153)/8), about 134.68 Elo.
+	if got, want := ScoreGap(2, priorDrawElo), 400*math.Log10((5+math.Sqrt(153))/8); !near(got, want, 1e-12) {
+		t.Errorf("ScoreGap(2, prior) = %g, want %g", got, want)
+	}
+	for _, draw := range []float64{0, 50, priorDrawElo, 300, 1000} {
+		prev := math.Inf(-1)
+		for _, odds := range []float64{0.001, 0.5, 1, 2, 3, 10, 1000} {
+			gap := ScoreGap(odds, draw)
+			if e := ExpectedScore(gap, draw); !near(e/(1-e), odds, 1e-9) {
+				t.Errorf("at ScoreGap(%g, %g) = %g the expected score is %g:1", odds, draw, gap, e/(1-e))
+			}
+			if back := ScoreGap(1/odds, draw); !near(back, -gap, 1e-12) {
+				t.Errorf("ScoreGap(1/%g, %g) = %g, want %g", odds, draw, back, -gap)
+			}
+			if !(gap > prev) {
+				t.Errorf("ScoreGap(%g, %g) = %g, not above %g for smaller odds", odds, draw, gap, prev)
+			}
+			prev = gap
+		}
+	}
+	// Draws widen the gap.
+	if !(ScoreGap(2, 0) < ScoreGap(2, 100) && ScoreGap(2, 100) < ScoreGap(2, 300)) {
+		t.Errorf("ScoreGap(2, θ) for θ = 0, 100, 300: %g, %g, %g; want increasing",
+			ScoreGap(2, 0), ScoreGap(2, 100), ScoreGap(2, 300))
+	}
+}
+
 func TestInformation(t *testing.T) {
 	// Check against the definition, the sum over answers of p'²/p, with
 	// the derivatives taken numerically from Probabilities.

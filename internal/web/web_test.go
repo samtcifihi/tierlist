@@ -1,7 +1,9 @@
 package web
 
 import (
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -169,6 +171,11 @@ func TestRating(t *testing.T) {
 	if n != 0 || a == b || a < 1 || a > 3 || b < 1 || b > 3 || !strings.Contains(body, `data-keys="ArrowLeft 1"`) {
 		t.Fatalf("first question: %d vs %d, token %d\n%s", a, b, n, body)
 	}
+	// With no answers, the draw setting is its prior's: equally rated
+	// entries are called about the same a third of the time.
+	if !strings.Contains(body, "draw setting 33%") {
+		t.Errorf("no draw setting of 33%% on the first question:\n%s", body)
+	}
 	if status, loc := c.answer(base, a, b, n, "a"); status != http.StatusSeeOther || loc != base+"/rate" {
 		t.Fatalf("answering: %d, %s", status, loc)
 	}
@@ -207,22 +214,36 @@ func TestRating(t *testing.T) {
 	}
 }
 
-var shownRatings = regexp.MustCompile(`value="([^"]+)" required aria-label="Name"[^<]*>\s*</form>\s*<span class="rating"[^>]*>(\d+) `)
+var shownRatings = regexp.MustCompile(`value="([^"]+)" required aria-label="Name"[^<]*>\s*</form>\s*<span class="rating"[^>]*>(\d+) <span class="muted">± (\d+)</span>`)
 
-func TestRatingsShownAround1500(t *testing.T) {
+func TestRatingsShownInPoints(t *testing.T) {
 	_, c := start(t, t.TempDir())
 	base := c.newList("Films", "Alien", "Brazil", "Casablanca")
 	c.answer(base, 1, 2, 0, "a")
 	_, body := c.get(base + "/entries")
-	shown := map[string]int{}
+	type rating struct{ points, sd int }
+	shown := map[string]rating{}
 	for _, m := range shownRatings.FindAllStringSubmatch(body, -1) {
-		shown[m[1]], _ = strconv.Atoi(m[2])
+		points, _ := strconv.Atoi(m[2])
+		sd, _ := strconv.Atoi(m[3])
+		shown[m[1]] = rating{points, sd}
 	}
 	// Alien beat Brazil, so they sit either side of Casablanca, which has no
 	// answers yet and so shows the center, 1500.
-	if shown["Casablanca"] != 1500 || !(shown["Alien"] > 1500) || !(shown["Brazil"] < 1500) ||
-		shown["Alien"]+shown["Brazil"] != 3000 {
+	if shown["Casablanca"].points != 1500 || !(shown["Alien"].points > 1500) || !(shown["Brazil"].points < 1500) ||
+		shown["Alien"].points+shown["Brazil"].points != 3000 {
 		t.Errorf("shown ratings %v; want Casablanca at 1500 with Alien and Brazil either side", shown)
+	}
+	// Ratings and their uncertainties are in points, not Elo.
+	fit, err := c.load("films").Fit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, name := range map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"} {
+		want := rating{int(math.Round(fit.Points(id))), int(math.Round(fit.PointsSD(id)))}
+		if shown[name] != want {
+			t.Errorf("%s shows as %v, want %v", name, shown[name], want)
+		}
 	}
 }
 
@@ -271,6 +292,13 @@ func TestTierListPage(t *testing.T) {
       <div class="tier-label">5★</div>`) ||
 		!strings.Contains(body, "5★: Alien\n4★:\n3★: Brazil\n2★:\n1★:\n0★: Casablanca") {
 		t.Fatalf("tier list page: %d\n%s", status, body)
+	}
+	fit, err := c.load("films").Fit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draw := fmt.Sprintf("Draw setting %.0f%%", 100*fit.SameChance()); !strings.Contains(body, draw) {
+		t.Errorf("no %q on the tier list page:\n%s", draw, body)
 	}
 
 	display := func(kind string, extra url.Values) (int, string) {

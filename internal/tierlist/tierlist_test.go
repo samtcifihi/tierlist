@@ -305,12 +305,69 @@ func TestTiedEntriesStayTogether(t *testing.T) {
 	if rows[0].Name != "5" || len(rows[0].Entries) != 2 {
 		t.Errorf("rows %v; want entries 2 and 3 together in 5 stars", rows)
 	}
-	if o, _ := l.Display.options(); o.DrawMargin != MinDrawMargin {
-		t.Errorf("a draw-margin of 0 is used as %g, want %g", o.DrawMargin, MinDrawMargin)
+	if got := fit.drawMarginElo(0); got != MinDrawMargin {
+		t.Errorf("a draw-margin of 0 is used as %g Elo, want %g", got, MinDrawMargin)
 	}
-	l.Display.DrawMargin = 30
-	if o, _ := l.Display.options(); o.DrawMargin != 30 {
-		t.Errorf("a draw-margin of 30 is used as %g", o.DrawMargin)
+	if got, want := fit.drawMarginElo(30), 30/fit.PointsPerElo(); got != want {
+		t.Errorf("a draw-margin of 30 points is used as %g Elo, want %g", got, want)
+	}
+}
+
+func TestPoints(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C")
+	fit, _ := l.Fit()
+	// With no answers, every entry is at the center, and the draw setting
+	// is its prior's, where equally rated entries are about the same a
+	// third of the time.
+	if fit.Points(1) != CenterPoints || math.Abs(fit.SameChance()-1.0/3) > 1e-9 {
+		t.Errorf("no answers: %g points, same chance %g; want %d, 1/3", fit.Points(1), fit.SameChance(), CenterPoints)
+	}
+
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 1, 2, AboutSame)
+	mustRecord(t, l, 3, 2, AboutSame)
+	fit, _ = l.Fit()
+	k, draw := fit.PointsPerElo(), fit.DrawElo()
+	// A gap of 100 points is an expected score of 2:1.
+	if e := bayeselo.ExpectedScore(TwoToOnePoints/k, draw); math.Abs(e-2.0/3) > 1e-12 {
+		t.Errorf("at %d points the expected score is %g, want 2/3", TwoToOnePoints, e)
+	}
+	// Ratings, gaps and uncertainties all scale by k, around the center.
+	for _, id := range []int{1, 2, 3} {
+		if got, want := fit.Points(id), CenterPoints+k*fit.Rating(id); math.Abs(got-want) > 1e-9 {
+			t.Errorf("entry %d: %g points, want %g", id, got, want)
+		}
+		if got, want := fit.PointsSD(id), k*fit.SD(id); math.Abs(got-want) > 1e-9 || !(got > 0) {
+			t.Errorf("entry %d: ± %g points, want %g", id, got, want)
+		}
+	}
+	if _, same, _ := bayeselo.Probabilities(0, draw); fit.SameChance() != same {
+		t.Errorf("same chance %g, want %g", fit.SameChance(), same)
+	}
+	if !math.IsNaN(fit.Points(9)) || !math.IsNaN(fit.PointsSD(9)) {
+		t.Errorf("no entry 9, but %g ± %g points", fit.Points(9), fit.PointsSD(9))
+	}
+}
+
+// With two entries, one in the top tier and one in the bottom, grouping
+// them puts both in the top tier. The draw-margin is in shown points.
+func TestDrawMarginInPoints(t *testing.T) {
+	l := mustNew(t, "Pair", "A", "B")
+	mustRecord(t, l, 1, 2, FirstBetter)
+	fit, _ := l.Fit()
+	gap := fit.Points(1) - fit.Points(2)
+	for _, c := range []struct {
+		margin   float64
+		together bool
+	}{{0.999 * gap, false}, {1.001 * gap, true}} {
+		l.Display.DrawMargin = c.margin
+		rows, err := l.Tiers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if together := len(rows[0].Entries) == 2; together != c.together {
+			t.Errorf("entries %g points apart, draw-margin %g: rows %v", gap, c.margin, rows)
+		}
 	}
 }
 

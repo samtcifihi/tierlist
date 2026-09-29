@@ -96,7 +96,7 @@ type rateView struct {
 	Token         int    // the number of answers the page was made with
 	Undo          string // the answer Undo would take back
 	Answers       int
-	DrawElo       string
+	Draw          string // the draw setting, as a percentage
 	Levels        string
 	Focus         []string // names of the entries in focus mode
 }
@@ -127,7 +127,7 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 		}
 		v.Ready = true
 		v.First, v.Second = entryByID(l, ol.pair[0]), entryByID(l, ol.pair[1])
-		v.DrawElo = fmt.Sprintf("%.0f", fit.DrawElo())
+		v.Draw = drawText(fit)
 		v.Levels = levelsText(l)
 	}
 	s.render(w, http.StatusOK, "rate", v)
@@ -205,6 +205,12 @@ func describe(c tierlist.Comparison, names map[int]string) string {
 	return fmt.Sprintf("%s and %s about the same", names[c.A], names[c.B])
 }
 
+// drawText shows the draw setting as how often equally rated entries are
+// called about the same.
+func drawText(fit *tierlist.Fit) string {
+	return fmt.Sprintf("%.0f%%", 100*fit.SameChance())
+}
+
 func levelsText(l *tierlist.List) string {
 	levels, ready, err := l.Levels()
 	switch {
@@ -244,7 +250,7 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	for _, e := range l.Entries {
 		row := entryRow{
 			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID),
-			Rating: shownRating(fit.Rating(e.ID)), SD: fmt.Sprintf("± %.0f", fit.SD(e.ID)),
+			Rating: fmt.Sprintf("%.0f", fit.Points(e.ID)), SD: fmt.Sprintf("± %.0f", fit.PointsSD(e.ID)),
 		}
 		if e.Removed {
 			v.Removed = append(v.Removed, row)
@@ -254,17 +260,6 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	}
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
 	s.render(w, http.StatusOK, "entries", v)
-}
-
-// ratingCenter is added to every rating the pages show, so that the dummy
-// entry, and any entry not yet compared, shows as 1500. Internally ratings
-// are relative to the dummy at 0. Differences between ratings, such as the
-// uncertainty, the draw setting and the draw-margin, are not shifted.
-const ratingCenter = 1500
-
-// shownRating formats a rating for the pages, as a whole number.
-func shownRating(x float64) string {
-	return fmt.Sprintf("%.0f", math.Round(ratingCenter+x))
 }
 
 func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList) {
@@ -397,7 +392,7 @@ type tiersView struct {
 	Text     string // the tier list as plain text
 	TextRows int    // lines for its text box, with room for a scroll bar
 	Empty    string // why there is no tier list
-	DrawElo  string
+	Draw     string // the draw setting, as a percentage
 	Levels   string
 }
 
@@ -479,7 +474,7 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 			s.message(w, http.StatusInternalServerError, "The ratings can't be worked out", err.Error())
 			return
 		}
-		v.DrawElo = fmt.Sprintf("%.0f", fit.DrawElo())
+		v.Draw = drawText(fit)
 		v.Levels = levelsText(l)
 	}
 	s.render(w, status, "tiers", v)

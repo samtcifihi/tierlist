@@ -30,8 +30,9 @@
         <option value="bottom-closed"{{if eq .Form.Convention "bottom-closed"}} selected{{end}}>down (bottom tier closed)</option>
       </select>
     </label>
-    <label class="field">Draw-margin, in Elo
-      <input type="number" name="drawMargin" min="0" step="any" value="{{.Form.DrawMargin}}"></label>
+    <label class="field">Draw-margin, in rating points
+      <input type="number" name="drawMargin" min="0" step="any" value="{{.Form.DrawMargin}}">
+      <span class="muted small">Entries this close or closer are grouped. 100 points apart is an expected score of 2:1.</span></label>
     <label class="field">A group of close entries goes where
       <select name="groupRule">
         <option value="middle-entry"{{if eq .Form.GroupRule "middle-entry"}} selected{{end}}>its middle entry would</option>
@@ -60,7 +61,7 @@
     {{end}}
   </div>
 </section>
-<p class="muted small readout">Draw setting {{.DrawElo}} Elo · {{.Levels}}</p>
+<p class="muted small readout"><span title="How often two equally rated entries are called about the same">Draw setting {{.Draw}}</span> · {{.Levels}}</p>
 <div class="plain">
   <label for="plain">Plain text, to copy</label>
   <textarea id="plain" readonly wrap="off" rows="{{.TextRows}}">{{.Text}}</textarea>
