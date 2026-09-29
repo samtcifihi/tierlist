@@ -2,6 +2,7 @@ package web
 
 import (
 	"cmp"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"math"
@@ -507,6 +508,8 @@ type entriesView struct {
 	Removed  []entryRow
 	Focus    bool
 	Ignoring string // what is ignored, in words, or ""
+	CSV      string // the shown entries as CSV, to copy
+	CSVRows  int    // lines for its text box, with room for a scroll bar
 	Answers  int
 	Reset    confirm
 	Delete   confirm
@@ -548,7 +551,26 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	}
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
 	v.Ignoring = ignoring(l)
+	v.CSV, v.CSVRows = entriesCSV(v.Shown, fit), min(len(v.Shown)+2, 20)
 	s.render(w, http.StatusOK, "entries", v)
+}
+
+// z95 is how many standard deviations a 95% interval of a normal
+// distribution reaches either side of its mean.
+const z95 = 1.959963984540054
+
+// entriesCSV writes the rows as CSV under a header row: each entry's name,
+// its rating in points as the page shows it, the width of the rating's
+// 95% interval in points, and its number of answers.
+func entriesCSV(rows []entryRow, fit *tierlist.Fit) string {
+	var b strings.Builder
+	w := csv.NewWriter(&b)
+	w.Write([]string{"entry name", "rating", "CI width", "number of answers"})
+	for _, r := range rows {
+		w.Write([]string{r.Name, r.Rating, fmt.Sprintf("%.0f", 2*z95*fit.PointsSD(r.ID)), strconv.Itoa(r.Answers)})
+	}
+	w.Flush() // writing to a strings.Builder cannot fail
+	return b.String()
 }
 
 // ignoring says what the list ignores, as in "Ignoring Alien and Brazil,

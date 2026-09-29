@@ -35,6 +35,11 @@
   <button>Reset ignores</button>
 </form>
 {{end}}
+<details class="export">
+  <summary>CSV, to copy</summary>
+  <textarea readonly wrap="off" rows="{{.CSVRows}}" aria-label="The entries as CSV">{{.CSV}}</textarea>
+  <p class="muted small">Best first, with ratings and CI widths in points. The CI is the 95% interval around a rating, reaching 1.96 times its ± uncertainty either side. Removed entries are left out.</p>
+</details>
 {{end}}
 
 {{if .Removed}}

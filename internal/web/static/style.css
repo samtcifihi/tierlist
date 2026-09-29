@@ -302,17 +302,20 @@ label.check { display: flex; gap: .4rem; align-items: center; }
 .readout { margin: .75rem 0 0; }
 .plain { display: grid; gap: .3rem; margin-top: 1.5rem; }
 .plain label { font-weight: 600; }
-.plain textarea { font: .9rem/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.plain textarea, .export textarea { font: .9rem/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
 
-/* Answers */
-.filter details {
+/* Answers, and the CSV on the Entries page */
+.filter details, details.export {
   margin-bottom: 1rem;
   padding: .6rem 1rem;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
-.filter summary { cursor: pointer; font-weight: 600; }
+.filter summary, .export summary { cursor: pointer; font-weight: 600; }
+.export { margin-top: 1.25rem; }
+.export textarea { margin-top: .6rem; }
+.export p { margin: .4rem 0 0; }
 .filter p { margin: .5rem 0; }
 .picks { display: flex; flex-wrap: wrap; gap: .4rem; }
 .pick {

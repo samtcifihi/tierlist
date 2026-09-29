@@ -1,6 +1,8 @@
 package web
 
 import (
+	"cmp"
+	"encoding/csv"
 	"fmt"
 	"html"
 	"io"
@@ -252,6 +254,61 @@ func TestRatingsShownInPoints(t *testing.T) {
 		if shown[name] != want {
 			t.Errorf("%s shows as %v, want %v", name, shown[name], want)
 		}
+	}
+}
+
+func TestEntriesCSV(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Kill Bill, Vol. 1", `The "Thing"`, "Zardoz", "Heat")
+	c.answer(base, 1, 2, 0, "a")
+	c.answer(base, 2, 3, 1, "same")
+	c.answer(base, 3, 4, 2, "a")
+	c.answer(base, 1, 3, 3, "a")
+	c.post(base+"/entries/4/remove", nil)
+	_, body := c.get(base + "/entries")
+	const open = `aria-label="The entries as CSV">`
+	i := strings.Index(body, open)
+	if i < 0 || !strings.Contains(body, "<summary>CSV, to copy</summary>") {
+		t.Fatalf("no CSV on the entries page:\n%s", body)
+	}
+	text, _, _ := strings.Cut(body[i+len(open):], "</textarea>")
+	text = html.UnescapeString(text)
+	// Names with commas and quotes are quoted, as CSV has it.
+	if !strings.HasPrefix(text, "entry name,rating,CI width,number of answers\n") ||
+		!strings.Contains(text, "\n\"Kill Bill, Vol. 1\",") || !strings.Contains(text, "\n\"The \"\"Thing\"\"\",") {
+		t.Errorf("CSV:\n%s", text)
+	}
+	records, err := csv.NewReader(strings.NewReader(text)).ReadAll()
+	if err != nil {
+		t.Fatalf("reading the CSV back: %v\n%s", err, text)
+	}
+	// The shown entries, best first, with the ratings the page shows, the
+	// full width of each rating's 95% interval (1.96 standard deviations
+	// either side, give or take rounding) and the answer counts. Zardoz is
+	// removed, so it is left out.
+	l := c.load("films")
+	fit, err := l.Fit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := l.Shown()
+	slices.SortStableFunc(want, func(a, b tierlist.Entry) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
+	if len(records) != 1+len(want) || len(want) != 4 || want[0].Name != "Alien" {
+		t.Fatalf("CSV has %d records for %v:\n%s", len(records), want, text)
+	}
+	counts := l.Counts()
+	for k, e := range want {
+		rec := records[k+1]
+		ci, err := strconv.Atoi(rec[2])
+		if rec[0] != e.Name || rec[1] != fmt.Sprintf("%.0f", fit.Points(e.ID)) || err != nil ||
+			math.Abs(float64(ci)-3.92*fit.PointsSD(e.ID)) > 0.6 || rec[3] != strconv.Itoa(counts[e.ID]) {
+			t.Errorf("row %d: %q, want %s with rating %.1f ± %.1f and %d answers", k+1, rec, e.Name, fit.Points(e.ID), fit.PointsSD(e.ID), counts[e.ID])
+		}
+	}
+	// A list with no entries has no CSV.
+	c.newList("Empty")
+	if _, body := c.get("/lists/empty/entries"); strings.Contains(body, "CSV") {
+		t.Errorf("CSV for an empty list:\n%s", body)
 	}
 }
 
