@@ -198,11 +198,13 @@ func TestLoadRejects(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Error("loading a missing file: want an error")
 	}
-	// Leaving out the entries and comparisons means there are none.
+	// Leaving out the entries and comparisons means there are none. The
+	// OWL/NEWT template was once called Hogwarts, and lists saved then
+	// still load.
 	bare := `{"format":"tierlist","version":1,"name":"L",` +
 		`"display":{"template":{"kind":"hogwarts"},"convention":"top-closed","drawMargin":0,"groupRule":"middle-entry","prefer":"higher"}}`
-	if l, err := decode([]byte(bare)); err != nil || l.Entries == nil || l.Comparisons == nil {
-		t.Errorf("a list without entries or comparisons: %v, %v", l, err)
+	if l, err := decode([]byte(bare)); err != nil || l.Entries == nil || l.Comparisons == nil || l.Display.Template.Kind != "owl-newt" {
+		t.Errorf("a list without entries or comparisons, saved with the Hogwarts template: %v, %v", l, err)
 	}
 }
 

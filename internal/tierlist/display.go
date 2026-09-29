@@ -33,7 +33,7 @@ type Display struct {
 
 // Template chooses the tier template.
 type Template struct {
-	// Kind is "stars", "hogwarts" or "custom".
+	// Kind is "stars", "owl-newt" or "custom".
 	Kind string `json:"kind"`
 
 	// For stars; see tier.StarOptions.
@@ -129,8 +129,8 @@ func (d Display) template() (tier.Template, error) {
 			return tier.Template{}, err
 		}
 		return tier.Stars(tier.StarOptions{Max: t.MaxStars, SkipZero: t.SkipZero, Divisions: t.Divisions, Sizes: sizes}, c)
-	case "hogwarts":
-		return tier.Hogwarts(c)
+	case "owl-newt":
+		return tier.OWLNEWT(c)
 	case "custom":
 		cutoffs := make([]*big.Rat, len(t.Cutoffs))
 		for i, s := range t.Cutoffs {

@@ -337,8 +337,9 @@ func reduced(num, den int) [2]int {
 	return [2]int{num / a, den / a}
 }
 
-// Hogwarts returns the fixed Hogwarts template.
-func Hogwarts(c Convention) (Template, error) {
+// OWLNEWT returns the fixed OWL/NEWT template, graded as the wizarding
+// exams are.
+func OWLNEWT(c Convention) (Template, error) {
 	tiers := []string{"Outstanding", "Exceeds Expectations", "Acceptable", "Poor", "Dreadful", "Troll"}
 	// Outstanding is the top 1/31 of [0, 1], and the tiers down to
 	// Dreadful end at the top 3/31, 6/31, 10/31 and 15/31. Troll is the
@@ -348,5 +349,5 @@ func Hogwarts(c Convention) (Template, error) {
 	for i, top := range tops {
 		cutoffs[i] = big.NewRat(31-top, 31)
 	}
-	return New("Hogwarts", tiers, cutoffs, c)
+	return New("OWL/NEWT", tiers, cutoffs, c)
 }

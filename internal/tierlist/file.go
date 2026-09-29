@@ -59,6 +59,11 @@ func decode(data []byte) (*List, error) {
 		return nil, fmt.Errorf("unknown format version %d", f.Version)
 	}
 	l := f.List
+	// Lists saved before the OWL/NEWT template was renamed call it
+	// "hogwarts".
+	if l.Display.Template.Kind == "hogwarts" {
+		l.Display.Template.Kind = "owl-newt"
+	}
 	if err := l.validate(); err != nil {
 		return nil, err
 	}

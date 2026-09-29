@@ -11,7 +11,7 @@ This project uses [just](https://github.com/casey/just), not make.
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
 - **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
-- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)). Below, a quiet line says what percentile the two entries of the latest answer are now at, and **Start top mode** narrows the pairs to the best entries (see [Top mode](#top-mode)).
+- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)). Below, a quiet line says where the two entries of the latest answer now stand in the list and how far it moved them, as in "Alien is now in the top 9% (+8)", and **Start top mode** narrows the pairs to the best entries (see [Top mode](#top-mode)).
 - **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)). **CSV, to copy** opens a box with the same list as CSV, to paste into a spreadsheet: a header row, then each entry's name, rating, CI width and number of answers. The CI width is the ± uncertainty listed with the rating, one standard deviation, in points; removed entries are left out.
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)". Next to the template's options, a chart draws the template as a distribution (see [Distribution chart](#distribution-chart)); it follows the options as they are typed in, before they are applied.
 - **Answers:** every answer so far in a table, newest first and numbered in the order given: the entry judged better, `>`, and the other entry, or both entries with `≈` between them for "about the same". Under "Filter by entry", tick entries and choose whether to see the answers involving any of them or only the answers between two of them (which needs at least two ticked). An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
@@ -157,16 +157,16 @@ The user can choose a set of entries to focus on, for example entries added afte
 
 #### Top mode
 
-To sort out the best entries, the user can start **top mode** for a percentage `p`, from the rating page. An entry's **percentile** is its place in the list as the tier list orders it: 100 for the best entry, 0 for the worst, evenly spaced between, as tier templates place entries. Top mode then:
+To sort out the best entries, the user can start **top mode** for a percentage `p`, from the rating page. An entry is in the **top `x`%** of the list when it and the entries above it, in the order the tier list uses, make up at most `x`% of the shown entries: the `k`th best of `n` is in the top `100 k / n`%, so the best of 12 is in the top 8.3% and the worst in the top 100%. Top mode then:
 
-- favours the top `p` percent (entries at or above the `100 - p`th percentile): pairs score 1.5 times higher for each of them, on top of the usual adjustments, so they come up more often without anything else being ruled out; and
-- asks only about the top `2p` percent: both entries of every pair are at or above the `100 - 2p`th percentile, which from `p = 50` up is every entry. The two best entries always count, so there is always a pair, and so does any entry with no answers yet, since its rating says nothing so far.
+- favours the top `p` percent: pairs score 1.5 times higher for each entry in it, on top of the usual adjustments, so they come up more often without anything else being ruled out; and
+- asks only about the top `2p` percent: both entries of every pair are in it, which from `p = 50` up is every entry. The two best entries always count, so there is always a pair, and so does any entry with no answers yet, since its rating says nothing so far.
 
 As answers move entries up and down, the sets move with them, and a pair lined up in the stack that no longer fits is dropped. Top mode and focus mode are never on together: starting one leaves the other. Top mode is saved with the list.
 
 In simulations, top mode on 20% sorts out the top better: with 30 entries and 90 answers, it left a fifth fewer of the true top 6 outside the fitted top 6 than the default mode did, and put slightly fewer pairs among them in the wrong order (with 50 entries and 250 answers, an eighth fewer and a little fewer). Nearly all of that comes from asking only about the top `2p` percent. Favouring more strongly would seem to help more, but it doesn't: it spends the answers on whichever entries look best so far and misses better ones rated low early. A factor of 3 kept only about half the gain, and 9 lost all of it, so the favouring is kept mild.
 
-The rating page also shows, quietly, the percentiles the two entries of the latest answer are now at.
+The rating page also says, quietly, where the two entries of the latest answer now stand and how far that answer moved them, as in "Alien is now in the top 9% (+8), Brazil in the top 50% (-16).". The shares are rounded up to whole percents, so the best of 12 is in the top 9%, as top mode counts it too, and the moves, in brackets, are the differences between the rounded shares before and after the answer, `+` for up the list and `-` for down (`±0` for neither). "Before" is the list as it is now without the latest answer: the program notes where the entries stood as each answer comes in, and after an Undo or a restart works it out again with a second fit, starting from ratings of 0 so that entries with no answers tie exactly and keep the list's order, as they did.
 
 #### Coming up
 
@@ -318,9 +318,9 @@ The factor, α and β can be written as decimals or fractions, such as `1.618` o
 
 The tier-placement logic only uses the number of tiers and their ranges. Fractional stars and whether 0 is included only change the tier names: 0–5 stars with half-stars and 0–10 whole stars are both 11 tiers with the same ranges, so they place every entry the same way.
 
-#### Hogwarts
+#### OWL/NEWT
 
-A fixed template. The user chooses its interval convention (and, as for any template, the draw-margin and group-placement settings) but not its tiers or cut-offs. From best to worst:
+A fixed template, graded as the wizarding exams (O.W.L.s and N.E.W.T.s) are. The user chooses its interval convention (and, as for any template, the draw-margin and group-placement settings) but not its tiers or cut-offs. From best to worst:
 
 | Tier | This tier and above | This tier alone |
 | --- | --- | --- |
@@ -348,7 +348,7 @@ The tier list page draws the chosen template as a probability density on `[0, 1]
 - Nearest-star tiers make a flat step with half-height steps at either end.
 - Geometric tiers make a staircase, each step the factor times the one before.
 - Beta tiers are drawn as the Beta(α, β) density itself, a smooth curve rather than a step per tier; the area under it over each slice is exactly that tier's share. Where the density has no bound (at 0 when α < 1, at 1 when β < 1), the curve runs off the top of the chart instead of flattening the rest, and a narrow peak gets extra points so it is drawn at its full height.
-- Hogwarts and custom templates make a step per tier, like any other template.
+- OWL/NEWT and custom templates make a step per tier, like any other template.
 
 The top of the chart is a round number a little above the highest point. Hovering over a tier's slice names the tier and its share (for up to 200 tiers).
 
@@ -358,7 +358,7 @@ While the options are being changed, the page fetches the chart for them from th
 
 - `internal/bayeselo`: fitting ratings, the draw setting and the ratings' uncertainty to the comparisons.
 - `internal/pairing`: choosing the next pair to compare.
-- `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
+- `internal/tier`: tier templates (stars, OWL/NEWT, custom) and placing a ranked list into tiers.
 - `internal/tierlist`: one tier list (entries, answers, focus and display options), saving and loading it, and tying it to the packages above.
 - `internal/web`: the pages, served from HTML templates, a style sheet and a small script embedded in the program.
 - `cmd/tierlist`: the program itself, which starts the server and opens the browser.

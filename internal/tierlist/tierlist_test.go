@@ -2,6 +2,7 @@ package tierlist
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"path/filepath"
@@ -274,18 +275,99 @@ func TestCountsAndLevels(t *testing.T) {
 	}
 }
 
-func TestPercentiles(t *testing.T) {
+func TestTopPercents(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B", "C", "D", "E")
 	mustRecord(t, l, 1, 2, FirstBetter)
 	mustRecord(t, l, 2, 3, FirstBetter)
 	mustRecord(t, l, 3, 4, FirstBetter)
 	l.RemoveEntry(5)
-	pct, err := l.Percentiles()
-	if err != nil || !reflect.DeepEqual(pct, map[int]float64{1: 100, 2: 100 * 2.0 / 3, 3: 100.0 / 3, 4: 0}) {
-		t.Errorf("percentiles %v, %v", pct, err)
+	pct, err := l.TopPercents()
+	if err != nil || !reflect.DeepEqual(pct, map[int]float64{1: 25, 2: 50, 3: 75, 4: 100}) {
+		t.Errorf("top percents %v, %v", pct, err)
 	}
-	if pct, _ := mustNew(t, "One", "A").Percentiles(); pct[1] != 100 {
-		t.Errorf("a lone entry is at the %gth percentile", pct[1])
+	if pct, _ := mustNew(t, "One", "A").TopPercents(); pct[1] != 100 {
+		t.Errorf("a lone entry is in the top %g%%", pct[1])
+	}
+
+	// A beat B, then C, not compared till then, beat A.
+	l = mustNew(t, "Letters", "A", "B", "C")
+	if _, err := l.TopPercentsBefore(); err == nil {
+		t.Error("TopPercentsBefore with no answers: want an error")
+	}
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 3, 1, FirstBetter)
+	now, err := l.TopPercents()
+	if err != nil || !reflect.DeepEqual(now, map[int]float64{3: 100.0 / 3, 1: 200.0 / 3, 2: 100}) {
+		t.Errorf("top percents after C beat A: %v, %v", now, err)
+	}
+	entries := slices.Clone(l.Entries)
+	before, err := l.TopPercentsBefore()
+	if err != nil || !reflect.DeepEqual(before, map[int]float64{1: 100.0 / 3, 3: 200.0 / 3, 2: 100}) {
+		t.Errorf("top percents before C beat A: %v, %v", before, err)
+	}
+	// Working that out leaves the list as it was.
+	if again, _ := l.TopPercents(); len(l.Comparisons) != 2 || !slices.Equal(l.Entries, entries) || !reflect.DeepEqual(again, now) {
+		t.Errorf("TopPercentsBefore changed the list: %d answers, entries %v, then %v", len(l.Comparisons), entries, l.Entries)
+	}
+
+	// In general they are what the list showed before the latest answer,
+	// as a list built again without it shows, up to entries tied in
+	// theory, which rounding may put either way round. Entries with no
+	// answers till then tie exactly and keep the list's order, whatever
+	// the latest answer did to their ratings.
+	for seed := range uint64(40) {
+		rng := rand.New(rand.NewPCG(seed, 3))
+		l, rebuilt := mustNew(t, "Random"), mustNew(t, "Random")
+		n := 4 + rng.IntN(10)
+		for k := range n {
+			l.AddEntry(fmt.Sprint("E", k))
+			rebuilt.AddEntry(fmt.Sprint("E", k))
+		}
+		for range 1 + rng.IntN(3*n) {
+			if a, b := 1+rng.IntN(n), 1+rng.IntN(n); a != b {
+				answer := []Answer{FirstBetter, SecondBetter, AboutSame}[rng.IntN(3)]
+				if len(l.Comparisons) > 0 {
+					last := l.Comparisons[len(l.Comparisons)-1]
+					mustRecord(t, rebuilt, last.A, last.B, last.Answer)
+				}
+				mustRecord(t, l, a, b, answer)
+			}
+		}
+		if len(l.Comparisons) == 0 {
+			continue
+		}
+		l.TopPercents()
+		before, err := l.TopPercentsBefore()
+		fit, _ := rebuilt.Fit()
+		if err != nil || len(before) != n {
+			t.Fatalf("seed %d: top percents before the latest answer %v, %v", seed, before, err)
+		}
+		counts := rebuilt.Counts()
+		for a := 1; a <= n; a++ {
+			for b := a + 1; b <= n; b++ {
+				ra, rb := fit.Rating(a), fit.Rating(b)
+				unrated := counts[a] == 0 && counts[b] == 0
+				if (ra > rb+1e-6 || unrated) && !(before[a] < before[b]) || rb > ra+1e-6 && !(before[b] < before[a]) {
+					t.Errorf("seed %d: entries %d and %d, rated %g and %g before the latest answer, came out in the top %g%% and %g%%",
+						seed, a, b, ra, rb, before[a], before[b])
+				}
+			}
+		}
+	}
+
+	// Top mode goes by the same measure: of 12 entries, the top 20% is the
+	// best two, in the top 8.3% and 16.7%, and not the third, at 25%.
+	var names []string
+	for k := range 12 {
+		names = append(names, string(rune('A'+k)))
+	}
+	l = mustNew(t, "Letters", names...)
+	for id := 1; id < 12; id++ {
+		mustRecord(t, l, id, id+1, FirstBetter)
+	}
+	l.SetTop(20)
+	if favoured, allowed, _ := l.TopSets(); len(favoured) != 12 || !favoured[2] || favoured[3] || !allowed[4] || allowed[5] {
+		t.Errorf("of 12 entries, top 20%% favours %v and allows %v", favoured, allowed)
 	}
 }
 
@@ -360,8 +442,8 @@ func TestTopMode(t *testing.T) {
 	if err := l.SetTop(20); err != nil {
 		t.Fatal(err)
 	}
-	// Their percentiles are 100, 88.9, 77.8, 66.7, 55.6 and so on, so the
-	// top 20% is A and B, and pairs may only include the top 40%, A to D.
+	// They are in the top 10%, 20%, 30% and so on, so the top 20% is A and
+	// B, and pairs may only include the top 40%, A to D.
 	trues := func(m map[int]bool) []int {
 		var ids []int
 		for id, ok := range m {
@@ -612,7 +694,7 @@ func TestDisplayOptions(t *testing.T) {
 	good := []Display{
 		DefaultDisplay(),
 		{Template: Template{Kind: "stars", MaxStars: 10, SkipZero: true, Divisions: 2}, Convention: "bottom-closed", DrawMargin: 25, GroupRule: "alternate", Prefer: "lower"},
-		{Template: Template{Kind: "hogwarts"}, Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "owl-newt"}, Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 		{Template: Template{Kind: "custom", Name: "Thirds", Tiers: []string{"Top", "Middle", "Bottom"}, Cutoffs: []string{"1/3", "0.666"}},
 			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 		{Template: Template{Kind: "stars", MaxStars: 5, Sizes: "geometric", Factor: "1.618", From: "worst"},
@@ -674,9 +756,9 @@ func TestShape(t *testing.T) {
 	if s, err := d.Shape(); err != nil || len(s.Shares) != 6 || s.Alpha != 0.5 || s.Beta != 3 || !(s.Shares[0] > s.Shares[5]) {
 		t.Errorf("Beta(1/2, 3) shape %+v, %v", s, err)
 	}
-	d.Template = Template{Kind: "hogwarts"}
+	d.Template = Template{Kind: "owl-newt"}
 	if s, err := d.Shape(); err != nil || s.Tiers[0] != "Troll" || s.Shares[0] != 16.0/31 || s.Alpha != 0 {
-		t.Errorf("Hogwarts shape %+v, %v", s, err)
+		t.Errorf("OWL/NEWT shape %+v, %v", s, err)
 	}
 	d.Template = Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "0", Beta: "3"}
 	if _, err := d.Shape(); err == nil {

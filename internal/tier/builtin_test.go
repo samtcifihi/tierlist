@@ -295,8 +295,8 @@ func TestHalfStarsEqualDoubledWholeStars(t *testing.T) {
 	}
 }
 
-func TestHogwarts(t *testing.T) {
-	h := mustHogwarts(t, TopClosed)
+func TestOWLNEWT(t *testing.T) {
+	h := mustOWLNEWT(t, TopClosed)
 	wantTiers := []string{"Outstanding", "Exceeds Expectations", "Acceptable", "Poor", "Dreadful", "Troll"}
 	if !slices.Equal(h.Tiers, wantTiers) {
 		t.Errorf("tiers = %q, want %q", h.Tiers, wantTiers)
@@ -305,7 +305,10 @@ func TestHogwarts(t *testing.T) {
 	if !slices.EqualFunc(h.Cutoffs, wantCutoffs, func(a, b *big.Rat) bool { return a.Cmp(b) == 0 }) {
 		t.Errorf("cut-offs = %v, want %v", h.Cutoffs, wantCutoffs)
 	}
-	if _, err := Hogwarts(Convention(-1)); err == nil {
-		t.Error("Hogwarts with an unknown convention: want an error")
+	if h.Name != "OWL/NEWT" {
+		t.Errorf("name %q, want OWL/NEWT", h.Name)
+	}
+	if _, err := OWLNEWT(Convention(-1)); err == nil {
+		t.Error("OWL/NEWT with an unknown convention: want an error")
 	}
 }

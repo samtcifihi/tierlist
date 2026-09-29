@@ -41,9 +41,9 @@ func mustStars(t *testing.T, o StarOptions, c Convention) Template {
 	return tmpl
 }
 
-func mustHogwarts(t *testing.T, c Convention) Template {
+func mustOWLNEWT(t *testing.T, c Convention) Template {
 	t.Helper()
-	tmpl, err := Hogwarts(c)
+	tmpl, err := OWLNEWT(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestShares(t *testing.T) {
 		// Nearest star: half-size end tiers.
 		{mustStars(t, StarOptions{Max: 5}, TopClosed), []float64{0.1, 0.2, 0.2, 0.2, 0.2, 0.1}},
 		// Troll is the bottom 16/31, Outstanding the top 1/31.
-		{mustHogwarts(t, BottomClosed), []float64{16.0 / 31, 5.0 / 31, 4.0 / 31, 3.0 / 31, 2.0 / 31, 1.0 / 31}},
+		{mustOWLNEWT(t, BottomClosed), []float64{16.0 / 31, 5.0 / 31, 4.0 / 31, 3.0 / 31, 2.0 / 31, 1.0 / 31}},
 		{mustNew(t, "One", []string{"All"}, nil, TopClosed), []float64{1}},
 		{mustNew(t, "Two", []string{"Top", "Rest"}, rats("0.9"), TopClosed), []float64{0.9, 0.1}},
 	} {
@@ -170,7 +170,7 @@ func TestTierAtMatchesIntervals(t *testing.T) {
 		for _, o := range []StarOptions{{Max: 5}, {Max: 10}, {Max: 5, SkipZero: true, Divisions: 2}, {Max: 3, Divisions: 3}} {
 			templates = append(templates, mustStars(t, o, c))
 		}
-		templates = append(templates, mustHogwarts(t, c))
+		templates = append(templates, mustOWLNEWT(t, c))
 	}
 	// One-point tiers at either end.
 	templates = append(templates,
@@ -199,7 +199,7 @@ func TestTierAtMatchesIntervals(t *testing.T) {
 func TestTierAtOnCutoff(t *testing.T) {
 	p := big.NewRat(30, 31) // between Outstanding and Exceeds Expectations
 	for c, want := range map[Convention]string{TopClosed: "Outstanding", BottomClosed: "Exceeds Expectations"} {
-		h := mustHogwarts(t, c)
+		h := mustOWLNEWT(t, c)
 		if got := h.Tiers[h.TierAt(p)]; got != want {
 			t.Errorf("convention %d: position 30/31 is in %q, want %q", c, got, want)
 		}

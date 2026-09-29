@@ -2,6 +2,7 @@ package tierlist
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -266,19 +267,16 @@ func (l *List) ranked(fit *Fit) []int {
 	return order
 }
 
-// percentile is the percentile of the k-th best of n entries, counting
-// from 0: 100 for the best, 0 for the worst, evenly spaced between, like
-// the positions tier templates use.
-func percentile(k, n int) float64 {
-	if n < 2 {
-		return 100
-	}
-	return 100 * float64(n-1-k) / float64(n-1)
+// topPercent says how far down the list the k-th best of n entries is,
+// counting from 0, as the x of "top x%": the share of the list at or above
+// it. The best of 12 entries is in the top 8.3%, the worst in the top 100%.
+func topPercent(k, n int) float64 {
+	return 100 * float64(k+1) / float64(n)
 }
 
-// Percentiles returns each shown entry's percentile in the list, by ID
-// (see percentile), in the order the tier list uses.
-func (l *List) Percentiles() (map[int]float64, error) {
+// TopPercents returns, by ID, how far down the list each shown entry is,
+// as the x of "top x%" (see topPercent), in the order the tier list uses.
+func (l *List) TopPercents() (map[int]float64, error) {
 	fit, err := l.Fit()
 	if err != nil {
 		return nil, err
@@ -286,14 +284,31 @@ func (l *List) Percentiles() (map[int]float64, error) {
 	order := l.ranked(fit)
 	out := make(map[int]float64, len(order))
 	for k, i := range order {
-		out[l.Entries[i].ID] = percentile(k, len(order))
+		out[l.Entries[i].ID] = topPercent(k, len(order))
 	}
 	return out, nil
 }
 
-// TopSets returns, by entry ID, the entries top mode favours, those at or
-// above the (100 - Top)th percentile, and the ones it allows in pairs at
-// all: those at or above the (100 - 2·Top)th, which is all of them from
+// TopPercentsBefore returns what TopPercents was before the latest answer,
+// for the entries as they are now. It fits the answers again without the
+// latest one, and reports an error if there are no answers. The fit starts
+// from ratings of 0, where entries with no answers stay exactly, so that
+// they tie and keep the list's order, as they did then.
+func (l *List) TopPercentsBefore() (map[int]float64, error) {
+	k := len(l.Comparisons)
+	if k == 0 {
+		return nil, errors.New("there are no answers yet")
+	}
+	before := &List{Entries: slices.Clone(l.Entries), Comparisons: l.Comparisons[:k-1], DrawElo: l.DrawElo}
+	for i := range before.Entries {
+		before.Entries[i].Rating = 0
+	}
+	return before.TopPercents()
+}
+
+// TopSets returns, by entry ID, the entries top mode favours, those in the
+// top Top percent of the list (see TopPercents), and the ones it allows in
+// pairs at all: those in the top 2·Top percent, which is all of them from
 // Top = 50 up, the two best whatever Top is, and any not compared yet,
 // whose ratings mean nothing so far. With top mode off both are nil.
 func (l *List) TopSets() (favoured, allowed map[int]bool, err error) {
@@ -309,9 +324,9 @@ func (l *List) TopSets() (favoured, allowed map[int]bool, err error) {
 	favoured, allowed = make(map[int]bool), make(map[int]bool)
 	for k, i := range order {
 		id := l.Entries[i].ID
-		p := percentile(k, len(order))
-		favoured[id] = p >= 100-l.Top
-		allowed[id] = p >= 100-2*l.Top || k < 2 || counts[id] == 0
+		x := topPercent(k, len(order))
+		favoured[id] = x <= l.Top
+		allowed[id] = x <= 2*l.Top || k < 2 || counts[id] == 0
 	}
 	return favoured, allowed, nil
 }

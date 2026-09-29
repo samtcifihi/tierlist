@@ -77,8 +77,8 @@ func TestShapeChart(t *testing.T) {
 		t.Errorf("Beta(100000, 200000) chart: top %s, want 600", v.Top)
 	}
 
-	// Hogwarts: Troll holds 16/31 of the list, 6 × 16/31 ≈ 3.1 high.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "hogwarts"}), false)
+	// OWL/NEWT: Troll holds 16/31 of the list, 6 × 16/31 ≈ 3.1 high.
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "owl-newt"}), false)
 	titles := []string{}
 	for _, p := range v.Parts {
 		titles = append(titles, p.Title)
@@ -86,7 +86,7 @@ func TestShapeChart(t *testing.T) {
 	if v.Top != "4" || !strings.HasPrefix(v.Line, "M0 225.8L166.7 225.8") || !slices.Equal(titles, []string{"Troll: 51.6% of the list",
 		"Dreadful: 16.1% of the list", "Poor: 12.9% of the list", "Acceptable: 9.68% of the list",
 		"Exceeds Expectations: 6.45% of the list", "Outstanding: 3.23% of the list"}) {
-		t.Errorf("Hogwarts chart: top %s, line %.40s, titles %q", v.Top, v.Line, titles)
+		t.Errorf("OWL/NEWT chart: top %s, line %.40s, titles %q", v.Top, v.Line, titles)
 	}
 
 	// Lots of tiers leave out the lines between them and the hover parts.

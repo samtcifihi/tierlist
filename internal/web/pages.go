@@ -187,7 +187,9 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 	} else if k := len(l.Comparisons); k > 0 {
 		v.Undo = describe(l.Comparisons[k-1], names)
 	}
-	v.Last = lastPercentiles(l, names)
+	if len(l.Comparisons) > 0 {
+		v.Last = lastMoves(l, names, ol.standingBefore())
+	}
 	if l.Top > 0 {
 		v.TopMode = topText(l.Top)
 	}
@@ -264,12 +266,18 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, ol *openList) {
 		back(w, r, rate, "That answer came from an out-of-date page, so it wasn't recorded.", "")
 		return
 	}
+	// Where the entries stand now, from the fit the rating page just used,
+	// is where they stood before this answer.
+	before, errBefore := l.TopPercents()
 	if err := l.Record(a, b, tierlist.Answer(r.FormValue("answer"))); err != nil {
 		back(w, r, rate, "", err.Error())
 		return
 	}
 	if !s.saved(w, ol) {
 		return
+	}
+	if errBefore == nil {
+		ol.standing = standing{key: standingKey(l), before: before}
 	}
 	ol.done = append(ol.done, done{a: a, b: b})
 	ol.asked(a, b)
@@ -390,28 +398,39 @@ func (s *Server) setTop(w http.ResponseWriter, r *http.Request, ol *openList) {
 	back(w, r, rate, "", "")
 }
 
-// lastPercentiles says what percentile the entries of the latest answer
-// are now at, as in "Alien is now at the 92nd percentile, Brazil at the
-// 45th.", leaving out removed ones.
-func lastPercentiles(l *tierlist.List, names map[int]string) string {
+// lastMoves says where the entries of the latest answer now stand, as a
+// share of the list from the top, and how many percentage points that
+// answer moved them, + for up the list and - for down, as in "Alien is now
+// in the top 9% (+8), Brazil in the top 50% (-16).". Shares are rounded
+// up, so an entry in the top 8.3% is in the top 9%, as it is in top mode's
+// terms, and the moves are between the rounded shares. Removed entries
+// are left out, and so are the moves when before is nil.
+func lastMoves(l *tierlist.List, names map[int]string, before map[int]float64) string {
 	k := len(l.Comparisons)
 	if k == 0 {
 		return ""
 	}
-	pct, err := l.Percentiles()
+	now, err := l.TopPercents()
 	if err != nil {
 		return ""
 	}
 	c := l.Comparisons[k-1]
 	var parts []string
 	for _, id := range []int{c.A, c.B} {
-		if p, ok := pct[id]; ok {
-			if len(parts) == 0 {
-				parts = append(parts, fmt.Sprintf("%s is now at the %s percentile", names[id], ordinal(int(math.Round(p)))))
-			} else {
-				parts = append(parts, fmt.Sprintf("%s at the %s", names[id], ordinal(int(math.Round(p)))))
-			}
+		x, ok := now[id]
+		if !ok {
+			continue
 		}
+		part := fmt.Sprintf("in the top %d%%", roundUp(x))
+		if b, ok := before[id]; ok {
+			part += " (" + signed(roundUp(b)-roundUp(x)) + ")"
+		}
+		if len(parts) == 0 {
+			part = names[id] + " is now " + part
+		} else {
+			part = names[id] + " " + part
+		}
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		return ""
@@ -419,19 +438,17 @@ func lastPercentiles(l *tierlist.List, names map[int]string) string {
 	return strings.Join(parts, ", ") + "."
 }
 
-// ordinal writes n as "1st", "2nd", "3rd", "4th", "11th" and so on.
-func ordinal(n int) string {
-	suffix := "th"
+func roundUp(x float64) int { return int(math.Ceil(x)) }
+
+// signed writes a move up or down the list: "+8", "-8", or "±0".
+func signed(d int) string {
 	switch {
-	case n%100 >= 11 && n%100 <= 13:
-	case n%10 == 1:
-		suffix = "st"
-	case n%10 == 2:
-		suffix = "nd"
-	case n%10 == 3:
-		suffix = "rd"
+	case d > 0:
+		return "+" + strconv.Itoa(d)
+	case d < 0:
+		return strconv.Itoa(d)
 	}
-	return strconv.Itoa(n) + suffix
+	return "±0"
 }
 
 // lastIgnore returns the latest thing the rating page did, if that was an
@@ -907,8 +924,8 @@ func (f displayForm) template() (tierlist.Template, error) {
 			return tierlist.Template{}, errors.New("choose how big the tiers are")
 		}
 		return t, nil
-	case "hogwarts":
-		return tierlist.Template{Kind: "hogwarts"}, nil
+	case "owl-newt":
+		return tierlist.Template{Kind: "owl-newt"}, nil
 	case "custom":
 		var tiers []string
 		for _, line := range strings.Split(f.CustomTiers, "\n") {

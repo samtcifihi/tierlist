@@ -73,7 +73,7 @@
     <button class="subtle" data-keys="u U Backspace">Undo: {{.}} <kbd>U</kbd></button>
   </form>
   {{end}}
-  {{with .Last}}<p class="muted small">{{.}}</p>{{end}}
+  {{with .Last}}<p class="muted small" title="In brackets, how many percentage points this answer moved each entry: + up the list, - down">{{.}}</p>{{end}}
   {{if .Ready}}
   <p class="muted small"><a class="muted" href="{{.List.URL}}/answers">{{plural .Answers "answer" "answers"}}</a> · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{with .Levels}} · {{.}}{{end}}</p>
   {{if not .TopMode}}

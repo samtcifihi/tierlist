@@ -183,11 +183,15 @@ func TestRating(t *testing.T) {
 	if status, loc := c.answer(base, a, b, n, "a"); status != http.StatusSeeOther || loc != base+"/rate" {
 		t.Fatalf("answering: %d, %s", status, loc)
 	}
-	// The page then says where the two entries now stand: the winner at
-	// the top, the loser at the bottom, the third entry between them.
+	// The page then says where the two entries now stand, the winner in
+	// the top third and the loser at the bottom, and how far the answer
+	// moved them from where the list's order had them before.
 	names := map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"}
-	if _, _, _, body := c.question(base); !strings.Contains(body, names[a]+" is now at the 100th percentile, "+names[b]+" at the 0th.") {
-		t.Errorf("no percentiles for the last answer:\n%s", body)
+	was := map[int]int{1: 34, 2: 67, 3: 100}
+	want := fmt.Sprintf("%s is now in the top 34%% (%s), %s in the top 100%% (%s).", names[a], signed(was[a]-34), names[b], signed(was[b]-100))
+	// (The page writes + as &#43;.)
+	if _, _, _, body := c.question(base); !strings.Contains(html.UnescapeString(body), want) {
+		t.Errorf("no %q for the last answer:\n%s", want, body)
 	}
 	// The same form again, say from a double click, is ignored.
 	if _, loc := c.answer(base, a, b, n, "a"); !strings.Contains(loc, "out-of-date") {
@@ -372,13 +376,13 @@ func TestTierListPage(t *testing.T) {
 		}
 		return c.post(base+"/display", form)
 	}
-	if status, _ := display("hogwarts", nil); status != http.StatusSeeOther {
-		t.Errorf("choosing Hogwarts: %d", status)
+	if status, _ := display("owl-newt", nil); status != http.StatusSeeOther {
+		t.Errorf("choosing OWL/NEWT: %d", status)
 	}
 	// Switching back to stars from here starts at 10 stars.
 	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding (1): Alien") ||
-		!strings.Contains(body, `name="maxStars" min="3" value="10"`) {
-		t.Errorf("Hogwarts tier list:\n%s", body)
+		!strings.Contains(body, `name="maxStars" min="3" value="10"`) || !strings.Contains(body, `value="owl-newt" checked> OWL/NEWT`) {
+		t.Errorf("OWL/NEWT tier list:\n%s", body)
 	}
 	status, _ = display("custom", url.Values{"customName": {"Halves"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"1/2"}})
 	if l := c.load("films"); status != http.StatusSeeOther || l.Display.Template.Kind != "custom" ||
@@ -418,12 +422,111 @@ func TestTierListPage(t *testing.T) {
 	}
 }
 
-func TestOrdinal(t *testing.T) {
-	for n, want := range map[int]string{0: "0th", 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th",
-		21: "21st", 22: "22nd", 23: "23rd", 92: "92nd", 100: "100th", 101: "101st", 111: "111th"} {
-		if got := ordinal(n); got != want {
-			t.Errorf("ordinal(%d) = %q, want %q", n, got, want)
+func TestSigned(t *testing.T) {
+	for d, want := range map[int]string{8: "+8", -8: "-8", 0: "±0", 100: "+100", -1: "-1"} {
+		if got := signed(d); got != want {
+			t.Errorf("signed(%d) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+func TestLastMoves(t *testing.T) {
+	l, err := tierlist.New("Films")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Alien", "Brazil", "Casablanca"} {
+		l.AddEntry(name)
+	}
+	names := map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"}
+	if got := lastMoves(l, names, nil); got != "" {
+		t.Errorf("with no answers: %q", got)
+	}
+	// Alien beat Brazil, then Casablanca beat Alien: Casablanca rises from
+	// the top 66.7% to the top 33.3%, both rounded up.
+	l.Record(1, 2, tierlist.FirstBetter)
+	l.Record(3, 1, tierlist.FirstBetter)
+	before := map[int]float64{1: 100.0 / 3, 3: 200.0 / 3, 2: 100}
+	for _, c := range []struct {
+		before map[int]float64
+		want   string
+	}{
+		{before, "Casablanca is now in the top 34% (+33), Alien in the top 67% (-33)."},
+		{nil, "Casablanca is now in the top 34%, Alien in the top 67%."},
+		{map[int]float64{1: 200.0 / 3, 3: 100.0 / 3}, "Casablanca is now in the top 34% (±0), Alien in the top 67% (±0)."},
+	} {
+		if got := lastMoves(l, names, c.before); got != c.want {
+			t.Errorf("lastMoves with %v = %q, want %q", c.before, got, c.want)
+		}
+	}
+	// A removed entry is left out.
+	l.RemoveEntry(1)
+	if got := lastMoves(l, names, before); got != "Casablanca is now in the top 50% (+17)." {
+		t.Errorf("with Alien removed: %q", got)
+	}
+}
+
+// Where the latest answer moved its entries from is worked out for the
+// entries as they are now, so adding one after the answer counts it.
+func TestMovesAfterAddingEntries(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B")
+	c.answer(base, 1, 2, 0, "a")
+	if _, _, _, body := c.question(base); !strings.Contains(body, "A is now in the top 50% (±0), B in the top 100% (±0).") {
+		t.Errorf("after A beat B:\n%s", body)
+	}
+	// Before the answer, C would have tied with A and B and come last, so
+	// the answer moved B down from the top 67%.
+	c.post(base+"/entries", url.Values{"names": {"C"}})
+	if _, _, _, body := c.question(base); !strings.Contains(body, "A is now in the top 34% (±0), B in the top 100% (-33).") {
+		t.Errorf("after adding C:\n%s", body)
+	}
+}
+
+// The rating page says how far the latest answer moved its entries the same
+// way whether it noted where they stood as the answer came in, or works it
+// out again after an Undo or a restart.
+func TestMovesAfterUndoAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	_, c := start(t, dir)
+	base := c.newList("Letters", "A", "B", "C", "D", "E")
+	n := 0
+	answer := func(a, b int) {
+		t.Helper()
+		if _, loc := c.answer(base, a, b, n, "a"); loc != base+"/rate" {
+			t.Fatalf("answering %d over %d: %s", a, b, loc)
+		}
+		n++
+	}
+	line := regexp.MustCompile(`<p class="muted small" title="In brackets[^"]*">([^<]*)</p>`)
+	moves := func(c *client) string {
+		t.Helper()
+		_, _, _, body := c.question(base)
+		m := line.FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no moves on the rating page:\n%s", body)
+		}
+		return html.UnescapeString(m[1])
+	}
+	answer(1, 2)
+	answer(1, 2)
+	answer(4, 3)
+	third := moves(c)
+	if !regexp.MustCompile(`^D is now in the top \d+% \(\+\d+\), C in the top \d+% \(-\d+\)\.$`).MatchString(third) {
+		t.Errorf("after D beat C: %q", third)
+	}
+	answer(5, 1)
+	if got := moves(c); !regexp.MustCompile(`^E is now in the top \d+% \(\+\d+\), A in the top \d+% \(-\d+\)\.$`).MatchString(got) {
+		t.Errorf("after E beat A: %q", got)
+	}
+	c.post(base+"/undo", url.Values{"n": {strconv.Itoa(n)}})
+	n--
+	if got := moves(c); got != third {
+		t.Errorf("after taking back E over A: %q, want %q as before", got, third)
+	}
+	_, c2 := start(t, dir)
+	if got := moves(c2); got != third {
+		t.Errorf("after a restart: %q, want %q", got, third)
 	}
 }
 

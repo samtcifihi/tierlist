@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
@@ -63,6 +64,44 @@ type openList struct {
 	// running, newest last, so that Undo can take back answers and ignores
 	// in order. Answers from before are still in the list itself.
 	done []done
+	// standing holds where the entries stood before the latest answer, so
+	// the rating page can say how far that answer moved them.
+	standing standing
+}
+
+// A standing is how far down the list each shown entry was before the
+// latest answer, as the x of "top x%" (see tierlist.List.TopPercents), and
+// the state of the list it is for, as standingKey writes it.
+type standing struct {
+	key    string
+	before map[int]float64
+}
+
+// standingKey identifies what a standing depends on: the number of
+// answers, the latest of them, and the entries shown.
+func standingKey(l *tierlist.List) string {
+	var b strings.Builder
+	if k := len(l.Comparisons); k > 0 {
+		fmt.Fprintf(&b, "%d %v;", k, l.Comparisons[k-1])
+	}
+	for _, e := range l.Shown() {
+		fmt.Fprintf(&b, " %d", e.ID)
+	}
+	return b.String()
+}
+
+// standingBefore returns where the shown entries stood before the latest
+// answer: as noted when it was given, or else worked out again, which
+// takes a second fit. It is nil if there are no answers.
+func (ol *openList) standingBefore() map[int]float64 {
+	if key := standingKey(ol.list); ol.standing.key != key {
+		before, err := ol.list.TopPercentsBefore()
+		if err != nil {
+			before = nil
+		}
+		ol.standing = standing{key: key, before: before}
+	}
+	return ol.standing.before
 }
 
 // A done is an answer, or an ignore of the pair shown or one of its
