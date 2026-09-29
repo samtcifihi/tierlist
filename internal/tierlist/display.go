@@ -4,8 +4,15 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/samtcifihi/tierlist/internal/bayeselo"
 	"github.com/samtcifihi/tierlist/internal/tier"
 )
+
+// MinDrawMargin is the smallest draw-margin used when placing entries, in
+// Elo: ten times the precision of the ratings, so that entries whose
+// ratings are equal in theory always group, whichever way rounding tips
+// them.
+const MinDrawMargin = 10 * bayeselo.Precision
 
 // Display holds a list's display options (see the README's Display
 // section).
@@ -92,7 +99,8 @@ func (d Display) template() (tier.Template, error) {
 	return tier.Template{}, fmt.Errorf("unknown template kind %q", t.Kind)
 }
 
-// options returns the placement options.
+// options returns the placement options, with the draw-margin raised to at
+// least MinDrawMargin.
 func (d Display) options() (tier.Options, error) {
 	o := tier.Options{DrawMargin: d.DrawMargin}
 	switch d.GroupRule {
@@ -114,5 +122,6 @@ func (d Display) options() (tier.Options, error) {
 	if !(o.DrawMargin >= 0) {
 		return o, fmt.Errorf("draw-margin %v is below 0", o.DrawMargin)
 	}
+	o.DrawMargin = max(o.DrawMargin, MinDrawMargin)
 	return o, nil
 }

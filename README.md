@@ -13,7 +13,7 @@ Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tie
 - **Your lists:** the start page lists your saved tier lists and creates new ones.
 - **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
 - **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating and its uncertainty.
-- **Tier list:** choose the display options and see the tier list, with a plain-text version to copy.
+- **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
 
@@ -199,6 +199,8 @@ The user chooses a **draw-margin** (in Bayes Elo rating units).
 Entries whose Bayes Elo ratings differ by less than or equal to the draw-margin are lumped into the same group, recursively. Adjacent merges chain: with a draw-margin of `1`, entries rated `1`, `2`, and `3` all belong to one group.
 
 On a list already ordered by rating, groups are contiguous blocks.
+
+Whatever the user chooses, the program groups with a draw-margin of at least ten times the precision the ratings are computed to: `10 × 400 × 10⁻⁸ / ln(10)`, about 0.00002 Elo. Ratings that are equal in theory can come out a rounding error apart (about 10⁻¹³ Elo), and without this floor a draw-margin of 0 would let rounding split them across tiers. This is not the ± uncertainty of the ratings, which is far larger and a matter for the draw-margin the user picks.
 
 ### Placing a group into a tier
 

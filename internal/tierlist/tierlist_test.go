@@ -284,6 +284,36 @@ func TestTiers(t *testing.T) {
 	}
 }
 
+// Entries 2 and 3 each beat entry 1 once, so their ratings are equal in
+// theory; rounding leaves them about 3e-14 Elo apart. Alone they would land
+// in 5 and 4 stars, but the minimum draw-margin groups them, and the split
+// group goes to the higher tier.
+func TestTiedEntriesStayTogether(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C", "D", "E")
+	mustRecord(t, l, 2, 1, FirstBetter)
+	mustRecord(t, l, 3, 1, FirstBetter)
+	mustRecord(t, l, 4, 1, AboutSame)
+	mustRecord(t, l, 5, 1, AboutSame)
+	fit, _ := l.Fit()
+	if d := fit.Rating(2) - fit.Rating(3); d == 0 || math.Abs(d) > MinDrawMargin {
+		t.Fatalf("entries 2 and 3 are %g Elo apart; this test needs a gap of rounding size", d)
+	}
+	rows, err := l.Tiers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Name != "5" || len(rows[0].Entries) != 2 {
+		t.Errorf("rows %v; want entries 2 and 3 together in 5 stars", rows)
+	}
+	if o, _ := l.Display.options(); o.DrawMargin != MinDrawMargin {
+		t.Errorf("a draw-margin of 0 is used as %g, want %g", o.DrawMargin, MinDrawMargin)
+	}
+	l.Display.DrawMargin = 30
+	if o, _ := l.Display.options(); o.DrawMargin != 30 {
+		t.Errorf("a draw-margin of 30 is used as %g", o.DrawMargin)
+	}
+}
+
 func TestDisplayOptions(t *testing.T) {
 	good := []Display{
 		DefaultDisplay(),

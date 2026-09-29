@@ -248,7 +248,8 @@ func TestTierListPage(t *testing.T) {
 	c.answer(base, 1, 2, 0, "a")
 	c.answer(base, 2, 3, 1, "a")
 	status, body := c.get(base + "/tiers")
-	if status != http.StatusOK || !strings.Contains(body, `<div class="tier-label">5★</div>`) ||
+	if status != http.StatusOK || !strings.Contains(body, `<div class="tier" style="--hue: 250">
+      <div class="tier-label">5★</div>`) ||
 		!strings.Contains(body, "5★: Alien\n4★:\n3★: Brazil\n2★:\n1★:\n0★: Casablanca") {
 		t.Fatalf("tier list page: %d\n%s", status, body)
 	}
@@ -302,6 +303,14 @@ func TestTierListPage(t *testing.T) {
 	none := c.newList("Empty")
 	if _, body := c.get(none + "/tiers"); !strings.Contains(body, "no entries yet") {
 		t.Errorf("empty tier list:\n%s", body)
+	}
+}
+
+func TestTierColors(t *testing.T) {
+	for _, c := range []struct{ i, n, want int }{{0, 6, 250}, {5, 6, 0}, {2, 5, 125}, {0, 1, 250}} {
+		if got := hue(c.i, c.n); got != c.want {
+			t.Errorf("hue(%d, %d) = %d, want %d", c.i, c.n, got, c.want)
+		}
 	}
 }
 

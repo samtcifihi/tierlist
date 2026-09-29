@@ -147,6 +147,11 @@ const (
 	stepTolerance = 1e-8
 )
 
+// Precision bounds how far, in Elo, a fitted rating can be from the exact
+// maximum of the posterior. In practice ratings that are equal in theory
+// come out within about 1e-13 Elo of each other.
+const Precision = stepTolerance / eloToNat
+
 // maximize moves x to the maximum of the log-posterior with Newton's
 // method and returns the inverse of the negative Hessian there,
 // (n+1)×(n+1) row-major.

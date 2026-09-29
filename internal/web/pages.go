@@ -483,12 +483,13 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 	s.render(w, status, "tiers", v)
 }
 
-// hue colors tier i of n, from red at the top to blue at the bottom.
+// hue colors tier i of n (0 is the top tier), from blue at the top to red
+// at the bottom.
 func hue(i, n int) int {
 	if n < 2 {
-		return 0
+		return 250
 	}
-	return 250 * i / (n - 1)
+	return 250 * (n - 1 - i) / (n - 1)
 }
 
 func (s *Server) setDisplay(w http.ResponseWriter, r *http.Request, ol *openList) {
