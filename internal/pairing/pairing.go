@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/samtcifihi/tierlist/internal/bayeselo"
 )
@@ -102,6 +103,39 @@ func Next(res *bayeselo.Result, history []bayeselo.Comparison, opts Options, rng
 		return pick[0], pick[1], nil
 	}
 	return pick[1], pick[0], nil
+}
+
+// Queue returns k more pairs to ask after pending, the pairs already lined
+// up to be asked, in order; each pair is in the order to show it. Pending
+// and newly chosen pairs count as asked with their answers not yet known:
+// each narrows the ratings' uncertainty as much as it is expected to (see
+// bayeselo.Result.Anticipate) and counts toward repeats and the new-entry
+// bonus, so the next pick looks elsewhere. res is the Bayes Elo fit of
+// history. With no pending pairs, the first pick is the one Next would
+// make.
+func Queue(res *bayeselo.Result, history []bayeselo.Comparison, pending [][2]int, k int, opts Options, rng *rand.Rand) ([][2]int, error) {
+	n := len(res.Ratings)
+	h := slices.Clone(history)
+	for _, p := range pending {
+		if p[0] < 0 || p[0] >= n || p[1] < 0 || p[1] >= n || p[0] == p[1] {
+			return nil, fmt.Errorf("pairing: pending pair of entries %d and %d", p[0], p[1])
+		}
+		res = res.Anticipate(p[0], p[1])
+		h = append(h, bayeselo.Comparison{A: p[0], B: p[1]})
+	}
+	out := make([][2]int, 0, k)
+	for len(out) < k {
+		a, b, err := Next(res, h, opts, rng)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, [2]int{a, b})
+		if len(out) < k {
+			res = res.Anticipate(a, b)
+			h = append(h, bayeselo.Comparison{A: a, B: b})
+		}
+	}
+	return out, nil
 }
 
 // score is a candidate pair's expected information gain, adjusted for

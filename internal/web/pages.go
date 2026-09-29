@@ -142,8 +142,9 @@ type rateView struct {
 	view
 	Ready         bool
 	First, Second tierlist.Entry
-	Token         int    // the number of answers the page was made with
-	Undo          string // the answer Undo would take back
+	Upcoming      []upcomingPair // the pairs coming up, the last one next
+	Token         int            // the number of answers the page was made with
+	Undo          string         // the answer Undo would take back
 	Answers       int
 	Draw          string // the draw setting, as a percentage
 	Levels        string
@@ -161,13 +162,9 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 		v.Undo = describe(l.Comparisons[k-1], names)
 	}
 	if len(l.Shown()) >= 2 {
-		if !pairShowable(l, ol.pair) {
-			a, b, err := l.NextPair(s.rng)
-			if err != nil {
-				s.message(w, http.StatusInternalServerError, "No pair to compare", err.Error())
-				return
-			}
-			ol.pair = [2]int{a, b}
+		if err := s.fillQueue(ol); err != nil {
+			s.message(w, http.StatusInternalServerError, "No pair to compare", err.Error())
+			return
 		}
 		fit, err := l.Fit()
 		if err != nil {
@@ -175,11 +172,39 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 			return
 		}
 		v.Ready = true
-		v.First, v.Second = entryByID(l, ol.pair[0]), entryByID(l, ol.pair[1])
+		v.First, v.Second = entryByID(l, ol.queue[0][0]), entryByID(l, ol.queue[0][1])
+		// The furthest pair first, so that the page can stack them with the
+		// next one nearest the pair being asked.
+		for k := len(ol.queue) - 1; k >= 1; k-- {
+			v.Upcoming = append(v.Upcoming, upcomingPair{First: names[ol.queue[k][0]], Second: names[ol.queue[k][1]]})
+		}
 		v.Draw = drawText(fit)
 		v.Levels = levelsText(l)
 	}
 	s.render(w, http.StatusOK, "rate", v)
+}
+
+type upcomingPair struct{ First, Second string }
+
+// fillQueue drops the pairs the rating page can no longer ask from the
+// list's queue, keeping the rest in order, and tops it up to the pair to
+// ask and the pairs coming up.
+func (s *Server) fillQueue(ol *openList) error {
+	var q [][2]int
+	for _, p := range ol.queue {
+		if pairShowable(ol.list, p) {
+			q = append(q, p)
+		}
+	}
+	if need := 1 + upcoming - len(q); need > 0 {
+		more, err := ol.list.NextPairs(q, need, s.rng)
+		if err != nil {
+			return err
+		}
+		q = append(q, more...)
+	}
+	ol.queue = q
+	return nil
 }
 
 // pairShowable reports whether the rating page can keep showing pair: two
@@ -218,7 +243,9 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, ol *openList) {
 	if !s.saved(w, ol) {
 		return
 	}
-	ol.pair = [2]int{}
+	if len(ol.queue) > 0 && ol.queue[0] == [2]int{a, b} {
+		ol.queue = ol.queue[1:]
+	}
 	back(w, r, rate, "", "")
 }
 
@@ -238,8 +265,10 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request, ol *openList) {
 	if !s.saved(w, ol) {
 		return
 	}
-	// Ask the same question again, the same way round.
-	ol.pair = [2]int{c.A, c.B}
+	// Ask the same question again, the same way round, before the ones
+	// that were coming up.
+	ol.queue = append([][2]int{{c.A, c.B}}, ol.queue...)
+	ol.queue = ol.queue[:min(len(ol.queue), 1+upcoming)]
 	back(w, r, rate, "Took back "+describe(c, names)+". Answer it again.", "")
 }
 
@@ -336,8 +365,11 @@ func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList
 		}
 		added++
 	}
-	if added > 0 && !s.saved(w, ol) {
-		return
+	if added > 0 {
+		if !s.saved(w, ol) {
+			return
+		}
+		ol.replan()
 	}
 	msg := fmt.Sprintf("Added %s.", plural(added, "entry", "entries"))
 	if skipped > 0 {
@@ -386,6 +418,7 @@ func (s *Server) removeEntry(w http.ResponseWriter, r *http.Request, ol *openLis
 		if err := l.RemoveEntry(id); err != nil {
 			return "", err
 		}
+		ol.replan()
 		return fmt.Sprintf("Removed %s. Its answers still count, and you can restore it at the bottom of the page.",
 			entryNames(l)[id]), nil
 	})(w, r, ol)
@@ -396,6 +429,7 @@ func (s *Server) restoreEntry(w http.ResponseWriter, r *http.Request, ol *openLi
 		if err := l.RestoreEntry(id); err != nil {
 			return "", err
 		}
+		ol.replan()
 		return fmt.Sprintf("Restored %s.", entryNames(l)[id]), nil
 	})(w, r, ol)
 }
@@ -429,6 +463,7 @@ func (s *Server) setFocus(w http.ResponseWriter, r *http.Request, ol *openList) 
 	if !s.saved(w, ol) {
 		return
 	}
+	ol.replan()
 	if len(ids) == 0 {
 		back(w, r, from, "Focus mode is off.", "")
 		return

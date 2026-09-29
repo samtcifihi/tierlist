@@ -331,6 +331,53 @@ func TestGain(t *testing.T) {
 	}
 }
 
+func TestAnticipate(t *testing.T) {
+	cs := simulate(rand.New(rand.NewPCG(3, 4)), []float64{-150, -20, 40, 200, 0}, 90, 12)
+	res := fit(t, 5, cs)
+	const i, j = 1, 3
+	got := res.Anticipate(i, j)
+
+	// It must match adding the comparison's information to the precision
+	// and inverting that directly.
+	n := len(res.Ratings)
+	prec := slices.Clone(res.cov)
+	if !cholesky(prec, n) {
+		t.Fatal("covariance not positive definite")
+	}
+	prec = cholInverse(prec, n)
+	f := Information(res.Ratings[i]-res.Ratings[j], res.DrawElo)
+	prec[i*n+i] += f
+	prec[j*n+j] += f
+	prec[i*n+j] -= f
+	prec[j*n+i] -= f
+	if !cholesky(prec, n) {
+		t.Fatal("new precision not positive definite")
+	}
+	want := cholInverse(prec, n)
+	for a := range n {
+		for b := range n {
+			if !near(got.Cov(a, b), want[a*n+b], 1e-9) {
+				t.Errorf("Cov(%d, %d) = %g, want %g", a, b, got.Cov(a, b), want[a*n+b])
+			}
+		}
+	}
+
+	// The ratings stay put, in a copy, and the pair's gap is known better,
+	// so asking about it again would gain less.
+	if !slices.Equal(got.Ratings, res.Ratings) || &got.Ratings[0] == &res.Ratings[0] || got.DrawElo != res.DrawElo {
+		t.Error("Anticipate changed or shared the ratings or draw setting")
+	}
+	d := res.DiffVar(i, j)
+	if !near(got.DiffVar(i, j), d/(1+f*d), 1e-9) || !(got.Gain(i, j) < res.Gain(i, j)) {
+		t.Errorf("DiffVar %g → %g, Gain %g → %g", d, got.DiffVar(i, j), res.Gain(i, j), got.Gain(i, j))
+	}
+	// An entry never compared keeps its uncertainty.
+	res = fit(t, 3, []Comparison{{0, 1, AWins}})
+	if after := res.Anticipate(0, 1); after.SD(2) != res.SD(2) || !(after.SD(0) < res.SD(0)) {
+		t.Errorf("SDs %g, %g after; %g, %g before", after.SD(0), after.SD(2), res.SD(0), res.SD(2))
+	}
+}
+
 func TestLevels(t *testing.T) {
 	// Equal ratings with the prior's draw setting: "about the same" a third
 	// of the time, so 3 levels.

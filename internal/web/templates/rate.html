@@ -18,8 +18,15 @@
   <input type="hidden" name="a" value="{{.First.ID}}">
   <input type="hidden" name="b" value="{{.Second.ID}}">
   <input type="hidden" name="n" value="{{.Token}}">
-  <h1 class="question">Which is better?</h1>
   <div class="pair">
+    {{with .Upcoming}}
+    <ol class="upcoming" aria-label="Coming up, the next pair last">
+      {{range .}}
+      <li><span class="box">{{.First}}</span><span class="vs">vs</span><span class="box">{{.Second}}</span></li>
+      {{end}}
+    </ol>
+    {{end}}
+    <h1 class="question">Which is better?</h1>
     <button class="choice" name="answer" value="a" data-keys="ArrowLeft 1">
       <span class="choice-name">{{.First.Name}}</span>
       <span class="key"><kbd>←</kbd> or <kbd>1</kbd></span>

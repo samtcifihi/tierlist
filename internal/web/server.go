@@ -55,7 +55,22 @@ type openList struct {
 	// notice changes made outside the program.
 	modTime time.Time
 	size    int64
-	pair    [2]int // entry IDs shown on the rating page, or zeros
+	// queue holds the pairs to ask, as entry IDs in the order to show
+	// them: the pair on the rating page, then the ones shown coming up.
+	// Once shown, a pair stays lined up until it is asked.
+	queue [][2]int
+}
+
+// upcoming is how many pairs the rating page shows coming up after the
+// one it asks.
+const upcoming = 4
+
+// replan keeps the pair being asked but forgets the ones coming up, so
+// that they are chosen again for a list whose entries or focus changed.
+func (ol *openList) replan() {
+	if len(ol.queue) > 1 {
+		ol.queue = ol.queue[:1]
+	}
 }
 
 var errNotFound = errors.New("no such list")

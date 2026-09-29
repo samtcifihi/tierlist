@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -590,5 +591,80 @@ func TestAnswersPage(t *testing.T) {
 	if _, body := c.get(base + "/entries"); !strings.Contains(body, `href="/lists/films/answers?entry=2">2 answers</a>`) ||
 		!strings.Contains(body, `href="/lists/films/answers?entry=1">1 answer</a>`) {
 		t.Errorf("entries page does not link to each entry's answers:\n%s", body)
+	}
+}
+
+var upcomingRows = regexp.MustCompile(`<li><span class="box">([^<]*)</span><span class="vs">vs</span><span class="box">([^<]*)</span></li>`)
+
+// upcomingShown returns the pairs the rating page shows coming up, the
+// furthest first, as it stacks them.
+func upcomingShown(body string) [][2]string {
+	var pairs [][2]string
+	for _, m := range upcomingRows.FindAllStringSubmatch(body, -1) {
+		pairs = append(pairs, [2]string{m[1], m[2]})
+	}
+	return pairs
+}
+
+func TestUpcomingPairs(t *testing.T) {
+	s, c := start(t, t.TempDir())
+	s.rng = rand.New(rand.NewPCG(1, 1)) // the same pairs every run
+	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H")
+	letter := func(id int) string { return string(rune('A' + id - 1)) }
+	a, b, n, body := c.question(base)
+	up := upcomingShown(body)
+	if len(up) != 4 {
+		t.Fatalf("%d pairs coming up, want 4:\n%s", len(up), body)
+	}
+
+	// Answering asks the next pair, nearest the bottom of the stack; the
+	// rest move down and one new pair joins at the top.
+	c.answer(base, a, b, n, "a")
+	a2, b2, n2, body := c.question(base)
+	up2 := upcomingShown(body)
+	if got := [2]string{letter(a2), letter(b2)}; got != up[3] || !slices.Equal(up2[1:], up[:3]) {
+		t.Errorf("before answering, coming up %v; after, asked %v with %v coming up", up, got, up2)
+	}
+	// Undo asks the answered pair again, with the same pairs coming up as
+	// before.
+	c.post(base+"/undo", url.Values{"n": {strconv.Itoa(n2)}})
+	a3, b3, _, body := c.question(base)
+	if a3 != a || b3 != b || !slices.Equal(upcomingShown(body), up) {
+		t.Errorf("after undo, asked %d vs %d with %v coming up; want %d vs %d with %v", a3, b3, upcomingShown(body), a, b, up)
+	}
+
+	// New entries are brought into the pairs coming up straight away, while
+	// the pair being asked stays.
+	c.post(base+"/entries", url.Values{"names": {"I\nJ"}})
+	a4, b4, _, body := c.question(base)
+	seen := map[string]bool{}
+	for _, p := range upcomingShown(body) {
+		seen[p[0]], seen[p[1]] = true, true
+	}
+	if a4 != a || b4 != b || !seen["I"] || !seen["J"] {
+		t.Errorf("after adding I and J: asked %d vs %d, coming up %v", a4, b4, upcomingShown(body))
+	}
+	// So is focus mode.
+	c.post(base+"/focus", url.Values{"focus": {"1"}})
+	a5, b5, _, body := c.question(base)
+	if a5 != 1 && b5 != 1 {
+		t.Errorf("in focus mode on A, asked %d vs %d", a5, b5)
+	}
+	for _, p := range upcomingShown(body) {
+		if p[0] != "A" && p[1] != "A" {
+			t.Errorf("in focus mode on A, %v is coming up", p)
+		}
+	}
+	// Leaving focus mode plans the pairs coming up afresh too.
+	c.post(base+"/focus", url.Values{"do": {"clear"}})
+	_, _, _, body = c.question(base)
+	withA := 0
+	for _, p := range upcomingShown(body) {
+		if p[0] == "A" || p[1] == "A" {
+			withA++
+		}
+	}
+	if withA == 4 {
+		t.Errorf("after leaving focus mode, every pair coming up still includes A: %v", upcomingShown(body))
 	}
 }

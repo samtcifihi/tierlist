@@ -11,7 +11,7 @@ This project uses [just](https://github.com/casey/just), not make.
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
 - **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
-- **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
+- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
 - **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. The list itself can be renamed or deleted at the bottom. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
 - **Answers:** every answer so far, newest first and numbered in the order given. Under "Filter by entry", tick entries to see only the answers that involve at least one of them. An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
@@ -145,6 +145,14 @@ The factors are tuning details and may change.
 #### Focus mode
 
 The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, only pairs that include at least one of those entries are scored and presented. Focus mode is saved with the list, so it stays on across sessions.
+
+#### Coming up
+
+The rating page also shows the next 4 pairs, small enough to take in at a glance, stacked above the pair being asked with the next one nearest and the later ones fading. A pair, once shown, stays lined up until it is asked, so the stack can be trusted: after each answer it moves down one, and one new pair joins at the top. Undo puts the answered pair back in front.
+
+Lined-up pairs are chosen before the answers to the pairs ahead of them are known. Each one counts as asked with its answer still unknown: it narrows the ratings' uncertainty by the information it is expected to carry (a rank-one update of their covariance) and counts toward repeats and the new-entry bonus, so the next pair looks elsewhere. The ratings themselves wait for real answers. Choosing 4 pairs ahead costs little: in simulated sessions with 20 entries and 60 answers, 16.6% of pairs ended up in the wrong order, against 16.2% when each pair is chosen just before it is asked and 19.0% with random pairs.
+
+Adding, removing or restoring entries, and switching focus mode on or off, choose the pairs coming up again. The pair being asked stays, unless it no longer fits.
 
 ### Session state
 

@@ -253,6 +253,39 @@ func TestNextPairHonorsFocus(t *testing.T) {
 	}
 }
 
+func TestNextPairs(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C", "D", "E", "F")
+	rng := rand.New(rand.NewPCG(4, 4))
+	// Three pairs lined up at once cover all six new entries.
+	pairs, err := l.NextPairs(nil, 3, rng)
+	seen := map[int]bool{}
+	for _, p := range pairs {
+		seen[p[0]], seen[p[1]] = true, true
+	}
+	if err != nil || len(pairs) != 3 || len(seen) != 6 {
+		t.Errorf("three pairs from six new entries: %v, %v", pairs, err)
+	}
+	// Pending pairs are given by entry ID, and focus mode and removed
+	// entries hold for every new pair.
+	l.RemoveEntry(6)
+	l.SetFocus([]int{1})
+	more, err := l.NextPairs([][2]int{{1, 2}}, 4, rng)
+	if err != nil || len(more) != 4 {
+		t.Fatalf("NextPairs: %v, %v", more, err)
+	}
+	for _, p := range more {
+		if (p[0] != 1 && p[1] != 1) || p[0] == 6 || p[1] == 6 {
+			t.Errorf("focus on 1, 6 removed: queued %v", p)
+		}
+	}
+	if more[0] == [2]int{1, 2} || more[0] == [2]int{2, 1} {
+		t.Errorf("the pending pair came straight back: %v", more)
+	}
+	if _, err := l.NextPairs([][2]int{{1, 9}}, 1, rng); err == nil {
+		t.Error("a pending pair with a missing entry: want an error")
+	}
+}
+
 func TestTiers(t *testing.T) {
 	l := mustNew(t, "Films", "Alien", "Brazil", "Casablanca")
 	mustRecord(t, l, 1, 2, FirstBetter)

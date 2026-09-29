@@ -235,8 +235,34 @@ func TestSession(t *testing.T) {
 	}
 }
 
+// playQueued is play with the next few pairs fixed in advance: it keeps
+// ahead pairs lined up after the one being asked, adding one with Queue
+// after each answer.
+func playQueued(t testing.TB, truth []float64, ahead, count int, rng *rand.Rand) []bayeselo.Comparison {
+	t.Helper()
+	var h []bayeselo.Comparison
+	res := fit(t, len(truth), nil)
+	var queue [][2]int
+	for range count {
+		more, err := Queue(res, h, queue, 1+ahead-len(queue), Options{}, rng)
+		if err != nil {
+			t.Fatal(err)
+		}
+		queue = append(queue, more...)
+		p := queue[0]
+		queue = queue[1:]
+		h = append(h, bayeselo.Comparison{A: p[0], B: p[1], Outcome: answer(truth, 120, p[0], p[1], rng)})
+		if res, err = bayeselo.Fit(len(truth), h, res); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return h
+}
+
 // Over a session, choosing pairs this way should order the entries better
-// than asking about random pairs.
+// than asking about random pairs, even with the next 4 pairs fixed in
+// advance so that they can be shown. (In longer simulations, fixing them
+// costs a small fraction of the advantage over random pairs.)
 func TestBeatsRandomPairs(t *testing.T) {
 	const n, answers, sessions = 20, 120, 30
 	wrong := func(res *bayeselo.Result, truth []float64) int {
@@ -250,11 +276,12 @@ func TestBeatsRandomPairs(t *testing.T) {
 		}
 		return k
 	}
-	smart, random := 0, 0
+	smart, queued, random := 0, 0, 0
 	for s := range sessions {
 		rng := rand.New(rand.NewPCG(uint64(s), 6))
 		truth := randomTruth(n, rng)
 		smart += wrong(fit(t, n, play(t, truth, nil, Options{}, answers, rng)), truth)
+		queued += wrong(fit(t, n, playQueued(t, truth, 4, answers, rng)), truth)
 
 		var h []bayeselo.Comparison
 		for range answers {
@@ -266,8 +293,61 @@ func TestBeatsRandomPairs(t *testing.T) {
 		}
 		random += wrong(fit(t, n, h), truth)
 	}
-	t.Logf("pairs in the wrong order over %d sessions: %d with Next, %d with random pairs", sessions, smart, random)
-	if smart >= random {
-		t.Errorf("Next left %d pairs in the wrong order, random pairs %d", smart, random)
+	t.Logf("pairs in the wrong order over %d sessions: %d with Next, %d with 4 pairs queued, %d with random pairs",
+		sessions, smart, queued, random)
+	if smart >= random || queued >= random {
+		t.Errorf("Next left %d pairs in the wrong order, Queue %d, random pairs %d", smart, queued, random)
+	}
+}
+
+func TestQueue(t *testing.T) {
+	rng := func() *rand.Rand { return rand.New(rand.NewPCG(8, 8)) }
+	res := fit(t, 12, nil)
+	// Uncompared entries pair up, even before any answer comes in.
+	pairs, err := Queue(res, nil, nil, 6, Options{}, rng())
+	seen := map[int]bool{}
+	for _, p := range pairs {
+		seen[p[0]], seen[p[1]] = true, true
+	}
+	if err != nil || len(pairs) != 6 || len(seen) != 12 {
+		t.Errorf("6 pairs from 12 new entries: %v (%v), covering %d entries", pairs, err, len(seen))
+	}
+	// With nothing pending, the first pair is Next's.
+	first, err := Queue(res, nil, nil, 1, Options{}, rng())
+	if a, b, _ := Next(res, nil, Options{}, rng()); err != nil || first[0] != [2]int{a, b} {
+		t.Errorf("Queue gave %v, Next %d, %d", first, a, b)
+	}
+	// Pending pairs count as asked: after a pending pair of two entries
+	// among three, the next pair brings in the third.
+	res3 := fit(t, 3, nil)
+	for range 10 {
+		next, err := Queue(res3, nil, [][2]int{{0, 1}}, 1, Options{}, rng())
+		if err != nil || (next[0] != [2]int{2, 0} && next[0] != [2]int{2, 1} && next[0] != [2]int{0, 2} && next[0] != [2]int{1, 2}) {
+			t.Fatalf("after pending 0 and 1: %v, %v", next, err)
+		}
+	}
+	// Focus and hidden entries hold for every pair.
+	h := []bayeselo.Comparison{cmp(0, 1), cmp(2, 3)}
+	res = fit(t, 12, h)
+	pairs, _ = Queue(res, h, nil, 8, Options{Focus: []int{4}, Hidden: []int{5}}, rng())
+	for _, p := range pairs {
+		if (p[0] != 4 && p[1] != 4) || p[0] == 5 || p[1] == 5 {
+			t.Errorf("focus on 4, 5 hidden: queued %v", p)
+		}
+	}
+	// With only two entries, the one pair is all there is to ask.
+	two, err := Queue(fit(t, 2, nil), nil, nil, 3, Options{}, rng())
+	for _, p := range two {
+		if key(p[0], p[1]) != [2]int{0, 1} {
+			t.Errorf("two entries: %v", two)
+		}
+	}
+	if err != nil || len(two) != 3 {
+		t.Errorf("two entries: %v, %v", two, err)
+	}
+	for _, bad := range [][2]int{{0, 0}, {0, 12}, {-1, 3}} {
+		if _, err := Queue(res, h, [][2]int{bad}, 1, Options{}, rng()); err == nil {
+			t.Errorf("pending %v: want an error", bad)
+		}
 	}
 }

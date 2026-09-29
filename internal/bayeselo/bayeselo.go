@@ -86,6 +86,32 @@ func (r *Result) Gain(i, j int) float64 {
 	return math.Log1p(Information(r.Ratings[i]-r.Ratings[j], r.DrawElo)*v) / 2
 }
 
+// Anticipate returns the result to expect once entries i and j have been
+// compared once more, before the answer is known: the same ratings and
+// draw setting, with the covariance narrowed by the information the
+// comparison is expected to carry. It is only available on results
+// returned by Fit or Anticipate.
+func (r *Result) Anticipate(i, j int) *Result {
+	n := len(r.Ratings)
+	// The comparison adds f·u·uᵀ to the precision, where u picks out the
+	// difference between entries i and j and f is its Fisher information;
+	// by the Sherman–Morrison formula the covariance loses c·s·sᵀ, with
+	// s = cov·u.
+	f := Information(r.Ratings[i]-r.Ratings[j], r.DrawElo)
+	s := make([]float64, n)
+	for k := range n {
+		s[k] = r.Cov(k, i) - r.Cov(k, j)
+	}
+	c := f / (1 + f*max(s[i]-s[j], 0))
+	out := &Result{Ratings: slices.Clone(r.Ratings), DrawElo: r.DrawElo, cov: make([]float64, n*n)}
+	for a := range n {
+		for b := range n {
+			out.cov[a*n+b] = r.cov[a*n+b] - c*s[a]*s[b]
+		}
+	}
+	return out
+}
+
 // Levels returns how many levels of quality the user tells apart among the
 // entries, by the model: 1 divided by the probability that two randomly
 // chosen entries would be judged about the same. It returns 0 for fewer

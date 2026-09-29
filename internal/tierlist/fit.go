@@ -2,6 +2,7 @@ package tierlist
 
 import (
 	"cmp"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -144,9 +145,21 @@ func (l *List) history(index map[int]int) []bayeselo.Comparison {
 // order to show them, honoring focus mode and leaving out removed entries.
 // rng breaks ties and picks the sides.
 func (l *List) NextPair(rng *rand.Rand) (first, second int, err error) {
-	fit, err := l.Fit()
+	pairs, err := l.NextPairs(nil, 1, rng)
 	if err != nil {
 		return 0, 0, err
+	}
+	return pairs[0][0], pairs[0][1], nil
+}
+
+// NextPairs returns k more pairs of entry IDs to compare after pending,
+// the pairs already lined up to be asked, in order (see pairing.Queue).
+// Like NextPair, it honors focus mode and leaves out removed entries; the
+// pending pairs must be between entries of the list.
+func (l *List) NextPairs(pending [][2]int, k int, rng *rand.Rand) ([][2]int, error) {
+	fit, err := l.Fit()
+	if err != nil {
+		return nil, err
 	}
 	var opts pairing.Options
 	for _, id := range l.Focus {
@@ -157,11 +170,23 @@ func (l *List) NextPair(rng *rand.Rand) (first, second int, err error) {
 			opts.Hidden = append(opts.Hidden, i)
 		}
 	}
-	a, b, err := pairing.Next(fit.res, l.history(fit.index), opts, rng)
-	if err != nil {
-		return 0, 0, err
+	queued := make([][2]int, len(pending))
+	for k, p := range pending {
+		a, okA := fit.index[p[0]]
+		b, okB := fit.index[p[1]]
+		if !okA || !okB {
+			return nil, fmt.Errorf("pending pair of entries %d and %d, which are not both in the list", p[0], p[1])
+		}
+		queued[k] = [2]int{a, b}
 	}
-	return l.Entries[a].ID, l.Entries[b].ID, nil
+	pairs, err := pairing.Queue(fit.res, l.history(fit.index), queued, k, opts, rng)
+	if err != nil {
+		return nil, err
+	}
+	for k, p := range pairs {
+		pairs[k] = [2]int{l.Entries[p[0]].ID, l.Entries[p[1]].ID}
+	}
+	return pairs, nil
 }
 
 // A Row is one tier of the displayed list.
