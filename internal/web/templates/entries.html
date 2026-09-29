@@ -17,7 +17,7 @@
     <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/rename" class="rename">
       <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
     </form>
-    <span class="rating" title="Rating in Elo, and its uncertainty">{{.Rating}} <span class="muted">{{.SD}}</span></span>
+    <span class="rating" title="Rating in Elo (an entry not yet compared has 1500), and its uncertainty">{{.Rating}} <span class="muted">{{.SD}}</span></span>
     <span class="muted small">{{.Answers}} answers</span>
     <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/remove">
       <button class="subtle">Remove</button>

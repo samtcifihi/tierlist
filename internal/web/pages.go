@@ -244,7 +244,7 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	for _, e := range l.Entries {
 		row := entryRow{
 			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID),
-			Rating: signed(fit.Rating(e.ID)), SD: fmt.Sprintf("± %.0f", fit.SD(e.ID)),
+			Rating: shownRating(fit.Rating(e.ID)), SD: fmt.Sprintf("± %.0f", fit.SD(e.ID)),
 		}
 		if e.Removed {
 			v.Removed = append(v.Removed, row)
@@ -256,13 +256,15 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	s.render(w, http.StatusOK, "entries", v)
 }
 
-// signed formats a rating as a whole number with its sign.
-func signed(x float64) string {
-	x = math.Round(x)
-	if x == 0 {
-		return "0"
-	}
-	return fmt.Sprintf("%+.0f", x)
+// ratingCenter is added to every rating the pages show, so that the dummy
+// entry, and any entry not yet compared, shows as 1500. Internally ratings
+// are relative to the dummy at 0. Differences between ratings, such as the
+// uncertainty, the draw setting and the draw-margin, are not shifted.
+const ratingCenter = 1500
+
+// shownRating formats a rating for the pages, as a whole number.
+func shownRating(x float64) string {
+	return fmt.Sprintf("%.0f", math.Round(ratingCenter+x))
 }
 
 func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList) {

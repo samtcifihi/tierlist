@@ -207,6 +207,25 @@ func TestRating(t *testing.T) {
 	}
 }
 
+var shownRatings = regexp.MustCompile(`value="([^"]+)" required aria-label="Name"[^<]*>\s*</form>\s*<span class="rating"[^>]*>(\d+) `)
+
+func TestRatingsShownAround1500(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil", "Casablanca")
+	c.answer(base, 1, 2, 0, "a")
+	_, body := c.get(base + "/entries")
+	shown := map[string]int{}
+	for _, m := range shownRatings.FindAllStringSubmatch(body, -1) {
+		shown[m[1]], _ = strconv.Atoi(m[2])
+	}
+	// Alien beat Brazil, so they sit either side of Casablanca, which has no
+	// answers yet and so shows the center, 1500.
+	if shown["Casablanca"] != 1500 || !(shown["Alien"] > 1500) || !(shown["Brazil"] < 1500) ||
+		shown["Alien"]+shown["Brazil"] != 3000 {
+		t.Errorf("shown ratings %v; want Casablanca at 1500 with Alien and Brazil either side", shown)
+	}
+}
+
 func TestFocus(t *testing.T) {
 	dir := t.TempDir()
 	_, c := start(t, dir)

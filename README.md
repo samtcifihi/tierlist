@@ -12,7 +12,7 @@ Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tie
 
 - **Your lists:** the start page lists your saved tier lists and creates new ones.
 - **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating and its uncertainty.
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating, shown around 1500, and its uncertainty.
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
@@ -39,7 +39,7 @@ Sorting uses **Bayes Elo**.
 
 Every real entry starts with a prior of one win and one loss against a single dummy entry. The dummy exists only for the prior; it is not part of the user-facing list and is not shown on the tierlist.
 
-The dummy's rating is fixed at 0, so every rating is relative to it.
+The dummy's rating is fixed at 0, so every rating is relative to it. The pages show ratings with 1500 added, so an entry nobody has compared yet shows 1500. Differences between ratings, such as the ± uncertainty, the draw setting and the draw-margin, are the same either way.
 
 ### Comparisons
 
@@ -62,6 +62,8 @@ For entries A and B with ratings `rA` and `rB`, and a **draw setting** `θ ≥ 0
 - P(about the same) = the rest
 
 where `f(x) = 1 / (1 + 10^(-x/400))` is the usual Elo curve. The larger `θ`, the more room there is for "about the same": between two equally rated entries its probability is `1 - 2 f(-θ)`. Which entry was shown first makes no difference.
+
+The curve fixes the scale: without draws, every 400 points of gap multiplies the odds of the higher entry being called better by 10, so 2:1 is about 120 points (`400 log10(2)`) and 3:1 about 191. With draws, the odds at a given gap also depend on `θ` and on how "about the same" is counted. With `θ` at 120, for example, "better" comes up twice as often as "worse" at a gap of about 91 points, while an expected score of 2:1, counting "about the same" as half, takes about 135.
 
 ### Draw setting
 
@@ -142,7 +144,7 @@ A list file holds:
 - every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
 - the focus set, while focus mode is on
 - the display options
-- each entry's last fitted rating and the last draw setting, which only speed up the next fit
+- each entry's last fitted rating (relative to the dummy at 0, not the 1500 the pages add) and the last draw setting, which only speed up the next fit
 
 For example:
 
