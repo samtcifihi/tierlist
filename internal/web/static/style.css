@@ -262,12 +262,18 @@ legend { font-weight: 600; padding: 0 .3rem; }
 label.field { display: grid; gap: .2rem; }
 label.field select { min-width: 0; }
 label.check { display: flex; gap: .4rem; align-items: center; }
-.for-stars, .for-custom, .for-geometric, .for-beta, .for-even { display: none; gap: .6rem; }
-.display:has(input[value="stars"]:checked) .for-stars,
-.display:has(input[value="custom"]:checked) .for-custom,
+/* Each kind of template shows its own options: stars and named tiers share
+   the tier sizes, named tiers and custom templates the tier names. (The
+   .display makes these rules outrank label.field.) */
+.display :is(.for-stars, .for-custom, .for-names, .for-sized, .for-geometric, .for-beta, .for-even) { display: none; gap: .6rem; }
+.display:has(input[value="stars"]:checked) :is(.for-stars, .for-sized),
+.display:has(input[value="named"]:checked) :is(.for-names, .for-sized),
+.display:has(input[value="custom"]:checked) :is(.for-custom, .for-names),
 .display:has(option[value="geometric"]:checked) .for-geometric,
-.display:has(option[value="beta"]:checked) .for-beta,
-.display:has(option[value="even"]:checked) .for-even { display: grid; }
+.display:has(option[value="beta"]:checked) .for-beta { display: grid; }
+.display:has(option[value="even"]:checked) .for-even { display: block; }
+.display:has(input[value="named"]:checked) .only-stars,
+.display:not(:has(input[value="named"]:checked)) .only-named { display: none; }
 .params { display: flex; gap: 1rem; }
 .params input { width: 6rem; }
 .display .apply { grid-column: 1 / -1; justify-self: start; }

@@ -55,7 +55,7 @@ func TestShares(t *testing.T) {
 		tmpl Template
 		want []float64
 	}{
-		// Nearest star: half-size end tiers.
+		// Nearest tier: half-size end tiers.
 		{mustStars(t, StarOptions{Max: 5}, TopClosed), []float64{0.1, 0.2, 0.2, 0.2, 0.2, 0.1}},
 		// Troll is the bottom 16/31, Outstanding the top 1/31.
 		{mustOWLNEWT(t, BottomClosed), []float64{16.0 / 31, 5.0 / 31, 4.0 / 31, 3.0 / 31, 2.0 / 31, 1.0 / 31}},

@@ -57,9 +57,9 @@ type Sizes struct {
 // told apart.
 var errTooSmall = errors.New("these tier sizes are too extreme to work out; try values closer to even tiers")
 
-// maxStarTiers guards against absurd option values allocating huge
-// templates.
-const maxStarTiers = 1000
+// maxTiers guards against absurd option values, or lists of tier names,
+// allocating huge templates.
+const maxTiers = 1000
 
 // Stars generates a star template. With even sizes and n tiers, the top
 // and bottom tiers each cover 1/(2*(n-1)) of [0, 1] and every other tier
@@ -78,8 +78,8 @@ func Stars(o StarOptions, c Convention) (Template, error) {
 	if o.SkipZero {
 		lowest = 1
 	}
-	if o.Max > maxStarTiers || d > maxStarTiers || (o.Max-lowest)*d+1 > maxStarTiers {
-		return Template{}, fmt.Errorf("a star template can have at most %d tiers", maxStarTiers)
+	if o.Max > maxTiers || d > maxTiers || (o.Max-lowest)*d+1 > maxTiers {
+		return Template{}, fmt.Errorf("a star template can have at most %d tiers", maxTiers)
 	}
 	// Tier i, best first, is (top-i)/d stars.
 	top := o.Max * d
@@ -98,6 +98,25 @@ func Stars(o StarOptions, c Convention) (Template, error) {
 		title += fmt.Sprintf(" in steps of 1/%d", d)
 	}
 	return New(title, tiers, cutoffs, c)
+}
+
+// Named returns a template of tiers with the given names, best first,
+// sized as s says, the way Stars sizes its tiers: with even sizes, an
+// entry gets the tier nearest its position, as if the tiers stood evenly
+// spaced from 0 to 1, so the top and bottom tiers are half the size of the
+// others.
+func Named(names []string, s Sizes, c Convention) (Template, error) {
+	switch n := len(names); {
+	case n == 0:
+		return Template{}, errors.New("a template needs at least one tier")
+	case n > maxTiers:
+		return Template{}, fmt.Errorf("a template can have at most %d tiers", maxTiers)
+	}
+	cutoffs, err := s.cutoffs(len(names))
+	if err != nil {
+		return Template{}, err
+	}
+	return New("Named tiers", slices.Clone(names), cutoffs, c)
 }
 
 // cutoffs returns the n-1 increasing cut-offs of n tiers of these sizes.

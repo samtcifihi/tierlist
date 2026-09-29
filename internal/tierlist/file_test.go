@@ -131,6 +131,22 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestSaveNamedTiers(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B")
+	l.Display.Template = Template{Kind: "named", Tiers: []string{"S", "A", "B", "C"}, Sizes: "beta", Alpha: "1/2", Beta: "2"}
+	path := filepath.Join(t.TempDir(), "letters.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !bytes.Contains(data, []byte(`"kind": "named"`)) {
+		t.Errorf("saved named tiers:\n%s", data)
+	}
+	if l2, err := Load(path); err != nil || !reflect.DeepEqual(l2.Display, l.Display) {
+		t.Errorf("loaded display %+v, %v; want %+v", l2.Display, err, l.Display)
+	}
+}
+
 func TestSaveRefusesInvalidList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "films.json")

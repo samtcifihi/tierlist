@@ -33,24 +33,26 @@ type Display struct {
 
 // Template chooses the tier template.
 type Template struct {
-	// Kind is "stars", "owl-newt" or "custom".
+	// Kind is "stars", "named" (tiers the user names, sized as star tiers
+	// are), "owl-newt" or "custom".
 	Kind string `json:"kind"`
 
 	// For stars; see tier.StarOptions.
 	MaxStars  int  `json:"maxStars,omitempty"`
 	SkipZero  bool `json:"skipZero,omitempty"`
 	Divisions int  `json:"divisions,omitempty"`
-	// Sizes is how big the star tiers are: "" for even tiers, "geometric"
-	// or "beta" (see tier.Sizes), with the numbers as the user wrote them,
-	// as decimals or fractions.
+	// Sizes is how big the tiers of stars or named tiers are: "" for even
+	// tiers, "geometric" or "beta" (see tier.Sizes), with the numbers as
+	// the user wrote them, as decimals or fractions.
 	Sizes  string `json:"sizes,omitempty"`
 	Factor string `json:"factor,omitempty"` // geometric: each tier's size over the one before's
 	From   string `json:"from,omitempty"`   // geometric: counting from the "best" (default) or "worst" tier
 	Alpha  string `json:"alpha,omitempty"`  // beta
 	Beta   string `json:"beta,omitempty"`   // beta
 
-	// For a custom template: its name, its tier names (best first) and its
-	// cut-offs (increasing) as the user wrote them.
+	// For named tiers and a custom template, the tier names, best first;
+	// for a custom template, also its name and its cut-offs (increasing)
+	// as the user wrote them.
 	Name    string   `json:"name,omitempty"`
 	Tiers   []string `json:"tiers,omitempty"`
 	Cutoffs []string `json:"cutoffs,omitempty"`
@@ -100,7 +102,7 @@ func (d Display) Shape() (Shape, error) {
 	}
 	s := Shape{Tiers: slices.Clone(t.Tiers), Shares: t.Shares()}
 	slices.Reverse(s.Tiers)
-	if d.Template.Kind == "stars" && d.Template.Sizes == "beta" {
+	if (d.Template.Kind == "stars" || d.Template.Kind == "named") && d.Template.Sizes == "beta" {
 		sizes, err := d.Template.sizes()
 		if err != nil {
 			return Shape{}, err
@@ -129,6 +131,12 @@ func (d Display) template() (tier.Template, error) {
 			return tier.Template{}, err
 		}
 		return tier.Stars(tier.StarOptions{Max: t.MaxStars, SkipZero: t.SkipZero, Divisions: t.Divisions, Sizes: sizes}, c)
+	case "named":
+		sizes, err := t.sizes()
+		if err != nil {
+			return tier.Template{}, err
+		}
+		return tier.Named(t.Tiers, sizes, c)
 	case "owl-newt":
 		return tier.OWLNEWT(c)
 	case "custom":
@@ -145,7 +153,7 @@ func (d Display) template() (tier.Template, error) {
 	return tier.Template{}, fmt.Errorf("unknown template kind %q", t.Kind)
 }
 
-// sizes reads how big the star tiers are.
+// sizes reads how big the tiers of stars or named tiers are.
 func (t Template) sizes() (tier.Sizes, error) {
 	switch t.Sizes {
 	case "":

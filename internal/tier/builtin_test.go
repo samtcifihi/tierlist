@@ -148,9 +148,9 @@ func TestBetaTiers(t *testing.T) {
 	if top := widths(beta(5, 2)); !(top[5] > equal && top[0] < equal) {
 		t.Errorf("Beta(5, 2) tier sizes, bottom first: %v", top)
 	}
-	// Unlike the nearest-star sizes, the end tiers aren't halved.
+	// Unlike the nearest-tier sizes, the end tiers aren't halved.
 	if w := widths(beta(1, 1)); w[0] == widths(even)[0] {
-		t.Errorf("Beta(1, 1) bottom tier %g, the same as the nearest-star one", w[0])
+		t.Errorf("Beta(1, 1) bottom tier %g, the same as the nearest-tier one", w[0])
 	}
 	for _, bad := range [][2]float64{{0, 1}, {1, -2}, {math.NaN(), 1}, {1, 2e6}} {
 		if _, err := Stars(StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: bad[0], Beta: bad[1]}}, TopClosed); err == nil {
@@ -231,6 +231,63 @@ func TestBetaPDF(t *testing.T) {
 			if math.Abs(area-share) > 1e-8 {
 				t.Errorf("Beta(%g, %g), tier %d from the bottom: area %.12f, share %.12f", ab[0], ab[1], k, area, share)
 			}
+		}
+	}
+}
+
+func TestNamed(t *testing.T) {
+	names := []string{"S", "A", "B", "C", "D"}
+	cutoffs := func(s Sizes) []*big.Rat {
+		t.Helper()
+		tmpl, err := Named(names, s, TopClosed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(tmpl.Tiers, names) {
+			t.Errorf("tiers %q, want %q", tmpl.Tiers, names)
+		}
+		return tmpl.Cutoffs
+	}
+	same := func(a, b []*big.Rat) bool {
+		return slices.EqualFunc(a, b, func(x, y *big.Rat) bool { return x.Cmp(y) == 0 })
+	}
+	// Nearest tier: five tiers as if at 0, 1/4, 1/2, 3/4 and 1, so the
+	// cut-offs fall halfway between, and the end tiers are half size.
+	if got := cutoffs(Sizes{}); !same(got, rats("1/8", "3/8", "5/8", "7/8")) {
+		t.Errorf("nearest-tier cut-offs %v", got)
+	}
+	// The other sizes are the stars' for as many tiers: 0–4 stars.
+	for _, s := range []Sizes{{Kind: GeometricTiers, Factor: 2}, {Kind: BetaTiers, Alpha: 2, Beta: 5}, {Kind: BetaTiers, Alpha: 1, Beta: 1}} {
+		if got, want := cutoffs(s), mustStars(t, StarOptions{Max: 4, Sizes: s}, TopClosed).Cutoffs; !same(got, want) {
+			t.Errorf("%+v: cut-offs %v, want %v as for 0–4 stars", s, got, want)
+		}
+	}
+	// One tier holds everything; two split [0, 1] in half.
+	if tmpl, err := Named([]string{"All"}, Sizes{Kind: BetaTiers, Alpha: 2, Beta: 2}, TopClosed); err != nil || len(tmpl.Cutoffs) != 0 {
+		t.Errorf("one tier: %+v, %v", tmpl, err)
+	}
+	if tmpl, err := Named([]string{"Good", "Bad"}, Sizes{}, BottomClosed); err != nil || !same(tmpl.Cutoffs, rats("1/2")) {
+		t.Errorf("two tiers: %+v, %v", tmpl, err)
+	}
+	// The names are copied, so changing the caller's list changes nothing.
+	given := []string{"Hot", "Not"}
+	tmpl, _ := Named(given, Sizes{}, TopClosed)
+	given[0] = "Cold"
+	if tmpl.Tiers[0] != "Hot" {
+		t.Error("the template shares its names with the caller")
+	}
+	for _, bad := range []struct {
+		names []string
+		sizes Sizes
+	}{
+		{nil, Sizes{}},
+		{[]string{"A", " "}, Sizes{}},
+		{make([]string, maxTiers+1), Sizes{}},
+		{[]string{"A", "B"}, Sizes{Kind: GeometricTiers, Factor: -1}},
+		{[]string{"A", "B"}, Sizes{Kind: BetaTiers, Alpha: 0, Beta: 1}},
+	} {
+		if _, err := Named(bad.names, bad.sizes, TopClosed); err == nil {
+			t.Errorf("Named(%d names, %+v): want an error", len(bad.names), bad.sizes)
 		}
 	}
 }

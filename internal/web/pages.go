@@ -768,7 +768,7 @@ type displayForm struct {
 	Alpha         string
 	Beta          string
 	CustomName    string
-	CustomTiers   string
+	TierNames     string // for named tiers and custom templates
 	CustomCutoffs string
 	Convention    string
 	DrawMargin    string
@@ -783,14 +783,18 @@ func formFor(d tierlist.Display) displayForm {
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
 		GroupRule: d.GroupRule, Prefer: d.Prefer,
 	}
-	switch t := d.Template; t.Kind {
+	t := d.Template
+	switch t.Kind {
 	case "stars":
 		f.MaxStars, f.SkipZero, f.Divisions = strconv.Itoa(t.MaxStars), t.SkipZero, strconv.Itoa(max(t.Divisions, 1))
+	case "custom":
+		f.CustomName, f.CustomCutoffs = t.Name, strings.Join(t.Cutoffs, "\n")
+	}
+	if t.Kind == "stars" || t.Kind == "named" {
 		f.Sizes = cmp.Or(t.Sizes, "even")
 		f.Factor, f.From, f.Alpha, f.Beta = cmp.Or(t.Factor, f.Factor), cmp.Or(t.From, f.From), cmp.Or(t.Alpha, f.Alpha), cmp.Or(t.Beta, f.Beta)
-	case "custom":
-		f.CustomName, f.CustomTiers, f.CustomCutoffs = t.Name, strings.Join(t.Tiers, "\n"), strings.Join(t.Cutoffs, "\n")
 	}
+	f.TierNames = strings.Join(t.Tiers, "\n")
 	return f
 }
 
@@ -893,7 +897,7 @@ func readDisplayForm(r *http.Request) displayForm {
 		SkipZero: r.FormValue("skipZero") != "", Divisions: strings.TrimSpace(r.FormValue("divisions")),
 		Sizes: cmp.Or(r.FormValue("sizes"), "even"), Factor: strings.TrimSpace(r.FormValue("factor")),
 		From: cmp.Or(r.FormValue("from"), "best"), Alpha: strings.TrimSpace(r.FormValue("alpha")), Beta: strings.TrimSpace(r.FormValue("beta")),
-		CustomName: strings.TrimSpace(r.FormValue("customName")), CustomTiers: r.FormValue("customTiers"),
+		CustomName: strings.TrimSpace(r.FormValue("customName")), TierNames: r.FormValue("tierNames"),
 		CustomCutoffs: r.FormValue("customCutoffs"), Convention: r.FormValue("convention"),
 		DrawMargin: strings.TrimSpace(r.FormValue("drawMargin")), GroupRule: r.FormValue("groupRule"),
 		Prefer: r.FormValue("prefer"),
@@ -913,28 +917,19 @@ func (f displayForm) template() (tierlist.Template, error) {
 		if divisions == 1 {
 			divisions = 0
 		}
-		t := tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions}
-		switch f.Sizes {
-		case "even":
-		case "geometric":
-			t.Sizes, t.Factor, t.From = f.Sizes, f.Factor, f.From
-		case "beta":
-			t.Sizes, t.Alpha, t.Beta = f.Sizes, f.Alpha, f.Beta
-		default:
-			return tierlist.Template{}, errors.New("choose how big the tiers are")
+		return f.withSizes(tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions})
+	case "named":
+		tiers, err := f.tierNames()
+		if err != nil {
+			return tierlist.Template{}, err
 		}
-		return t, nil
+		return f.withSizes(tierlist.Template{Kind: "named", Tiers: tiers})
 	case "owl-newt":
 		return tierlist.Template{Kind: "owl-newt"}, nil
 	case "custom":
-		var tiers []string
-		for _, line := range strings.Split(f.CustomTiers, "\n") {
-			if line = strings.TrimSpace(line); line != "" {
-				tiers = append(tiers, line)
-			}
-		}
-		if len(tiers) == 0 {
-			return tierlist.Template{}, errors.New("enter the tier names, best first, one per line")
+		tiers, err := f.tierNames()
+		if err != nil {
+			return tierlist.Template{}, err
 		}
 		cutoffs, err := sortedCutoffs(f.CustomCutoffs)
 		if err != nil {
@@ -943,6 +938,34 @@ func (f displayForm) template() (tierlist.Template, error) {
 		return tierlist.Template{Kind: "custom", Name: cmp.Or(f.CustomName, "Custom"), Tiers: tiers, Cutoffs: cutoffs}, nil
 	}
 	return tierlist.Template{}, errors.New("choose a template")
+}
+
+// withSizes adds the tier sizes the form chooses to t.
+func (f displayForm) withSizes(t tierlist.Template) (tierlist.Template, error) {
+	switch f.Sizes {
+	case "even":
+	case "geometric":
+		t.Sizes, t.Factor, t.From = f.Sizes, f.Factor, f.From
+	case "beta":
+		t.Sizes, t.Alpha, t.Beta = f.Sizes, f.Alpha, f.Beta
+	default:
+		return tierlist.Template{}, errors.New("choose how big the tiers are")
+	}
+	return t, nil
+}
+
+// tierNames reads the tier names, best first, one per line.
+func (f displayForm) tierNames() ([]string, error) {
+	var tiers []string
+	for _, line := range strings.Split(f.TierNames, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			tiers = append(tiers, line)
+		}
+	}
+	if len(tiers) == 0 {
+		return nil, errors.New("enter the tier names, best first, one per line")
+	}
+	return tiers, nil
 }
 
 // sortedCutoffs reads cut-offs written one per line or separated by commas

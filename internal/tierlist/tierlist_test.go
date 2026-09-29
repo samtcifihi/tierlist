@@ -701,6 +701,12 @@ func TestDisplayOptions(t *testing.T) {
 			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 		{Template: Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "1/2", Beta: "3"},
 			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "named", Tiers: []string{"S", "A", "B", "C"}},
+			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "named", Tiers: []string{"Loved", "Liked", "Meh"}, Sizes: "geometric", Factor: "1.5", From: "worst"},
+			Convention: "bottom-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "named", Tiers: []string{"Yes"}, Sizes: "beta", Alpha: "2", Beta: "2"},
+			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 	}
 	for _, d := range good {
 		if _, err := d.template(); err != nil {
@@ -728,6 +734,14 @@ func TestDisplayOptions(t *testing.T) {
 		func(d *Display) { d.Template.Sizes, d.Template.Alpha, d.Template.Beta = "beta", "-1", "2" },
 		func(d *Display) { d.Template.Sizes, d.Template.Alpha, d.Template.Beta = "beta", "2", "" },
 		func(d *Display) { d.Template.Sizes = "square" },
+		func(d *Display) { d.Template = Template{Kind: "named"} },
+		func(d *Display) { d.Template = Template{Kind: "named", Tiers: []string{"A", ""}} },
+		func(d *Display) {
+			d.Template = Template{Kind: "named", Tiers: []string{"A", "B"}, Sizes: "beta", Alpha: "0", Beta: "1"}
+		},
+		func(d *Display) {
+			d.Template = Template{Kind: "named", Tiers: []string{"A", "B"}, Sizes: "geometric", Factor: "x"}
+		},
 	}
 	for k, change := range bad {
 		d := DefaultDisplay()
@@ -755,6 +769,11 @@ func TestShape(t *testing.T) {
 	d.Template = Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "1/2", Beta: "3"}
 	if s, err := d.Shape(); err != nil || len(s.Shares) != 6 || s.Alpha != 0.5 || s.Beta != 3 || !(s.Shares[0] > s.Shares[5]) {
 		t.Errorf("Beta(1/2, 3) shape %+v, %v", s, err)
+	}
+	// Named tiers draw a Beta curve too, and keep the names given.
+	d.Template = Template{Kind: "named", Tiers: []string{"S", "A", "B"}, Sizes: "beta", Alpha: "3", Beta: "2"}
+	if s, err := d.Shape(); err != nil || !slices.Equal(s.Tiers, []string{"B", "A", "S"}) || s.Alpha != 3 || s.Beta != 2 {
+		t.Errorf("named Beta(3, 2) shape %+v, %v", s, err)
 	}
 	d.Template = Template{Kind: "owl-newt"}
 	if s, err := d.Shape(); err != nil || s.Tiers[0] != "Troll" || s.Shares[0] != 16.0/31 || s.Alpha != 0 {

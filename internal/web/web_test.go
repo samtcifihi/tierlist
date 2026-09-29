@@ -384,19 +384,19 @@ func TestTierListPage(t *testing.T) {
 		!strings.Contains(body, `name="maxStars" min="3" value="10"`) || !strings.Contains(body, `value="owl-newt" checked> OWL/NEWT`) {
 		t.Errorf("OWL/NEWT tier list:\n%s", body)
 	}
-	status, _ = display("custom", url.Values{"customName": {"Halves"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"1/2"}})
+	status, _ = display("custom", url.Values{"customName": {"Halves"}, "tierNames": {"Good\nBad"}, "customCutoffs": {"1/2"}})
 	if l := c.load("films"); status != http.StatusSeeOther || l.Display.Template.Kind != "custom" ||
 		!slices.Equal(l.Display.Template.Tiers, []string{"Good", "Bad"}) {
 		t.Errorf("custom template: %d, %+v", status, l.Display)
 	}
 	// Cut-offs may come in any order, separated by commas or lines.
-	display("custom", url.Values{"customTiers": {"S\nA\nB\nC"}, "customCutoffs": {"0.9, 1/4\n0.5"}})
+	display("custom", url.Values{"tierNames": {"S\nA\nB\nC"}, "customCutoffs": {"0.9, 1/4\n0.5"}})
 	if l := c.load("films"); !slices.Equal(l.Display.Template.Cutoffs, []string{"1/4", "0.5", "0.9"}) {
 		t.Errorf("cut-offs saved as %v", l.Display.Template.Cutoffs)
 	}
 	for _, bad := range []url.Values{
-		{"kind": {"custom"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"half"}},
-		{"kind": {"custom"}, "customTiers": {""}, "customCutoffs": {""}},
+		{"kind": {"custom"}, "tierNames": {"Good\nBad"}, "customCutoffs": {"half"}},
+		{"kind": {"custom"}, "tierNames": {""}, "customCutoffs": {""}},
 		{"kind": {"stars"}, "maxStars": {"2"}},
 		{"kind": {"stars"}, "drawMargin": {"-3"}},
 	} {
@@ -1069,6 +1069,88 @@ func TestTopModePage(t *testing.T) {
 	}
 }
 
+func TestNamedTiers(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H")
+	for k := 1; k < 8; k++ {
+		c.answer(base, k, k+1, k-1, "a")
+	}
+	// display sends the form with named tiers, and returns the status and
+	// either where it redirects to or the page it shows.
+	display := func(extra url.Values) (int, string) {
+		t.Helper()
+		form := mergeForm(url.Values{"kind": {"named"}, "tierNames": {"Top\n Good\n\nOkay\nWeak "}, "sizes": {"even"}})
+		for k, v := range extra {
+			form[k] = v
+		}
+		req, _ := http.NewRequest("POST", c.srv.URL+base+"/display", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		status, h, body := c.do(req)
+		return status, cmp.Or(h.Get("Location"), body)
+	}
+	plain := func() string {
+		t.Helper()
+		_, body := c.get(base + "/tiers")
+		m := regexp.MustCompile(`(?s)<textarea id="plain"[^>]*>(.*?)</textarea>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no tier list:\n%s", body)
+		}
+		return html.UnescapeString(m[1])
+	}
+	// Four tiers sized as the nearest tier, as if they stood at 1, 2/3,
+	// 1/3 and 0: cut-offs at 1/6, 1/2 and 5/6, so the eight entries go two
+	// to a tier.
+	if status, loc := display(nil); status != http.StatusSeeOther || strings.Contains(loc, "err=") {
+		t.Fatalf("choosing named tiers: %d, %s", status, loc)
+	}
+	if tm := c.load("letters").Display.Template; tm.Kind != "named" || !slices.Equal(tm.Tiers, []string{"Top", "Good", "Okay", "Weak"}) || tm.Sizes != "" {
+		t.Errorf("saved template %+v", tm)
+	}
+	if got := plain(); got != "Top (2): A, B\nGood (2): C, D\nOkay (2): E, F\nWeak (2): G, H" {
+		t.Errorf("nearest-tier tier list:\n%s", got)
+	}
+	_, body := c.get(base + "/tiers")
+	for _, want := range []string{`value="named" data-wait checked> Named tiers`, `<option value="even" selected>Nearest tier</option>`,
+		"Top\nGood\nOkay\nWeak</textarea>", `<title>Weak: 16.7% of the list</title>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tier list page lacks %q", want)
+		}
+	}
+	// Beta(1/2, 1/2) over four equal parts puts the cut-offs at 1/3, 1/2
+	// and 2/3, so the end tiers get more entries.
+	display(url.Values{"sizes": {"beta"}, "alpha": {"1/2"}, "beta": {"1/2"}})
+	if got := plain(); got != "Top (3): A, B, C\nGood (1): D\nOkay (1): E\nWeak (3): F, G, H" {
+		t.Errorf("Beta(1/2, 1/2) tier list:\n%s", got)
+	}
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "The Beta(0.5, 0.5) density.") || strings.Contains(body, "★") {
+		t.Errorf("named Beta tiers on the page:\n%s", body)
+	}
+	// Geometric sizes, each tier twice the one before from the best: 1, 2,
+	// 4 and 8 fifteenths.
+	display(url.Values{"sizes": {"geometric"}, "factor": {"2"}, "from": {"best"}})
+	if got := plain(); got != "Top (1): A\nGood (1): B\nOkay (2): C, D\nWeak (4): E, F, G, H" {
+		t.Errorf("geometric tier list:\n%s", got)
+	}
+	// The names carry over to a custom template, and back.
+	c.post(base+"/display", mergeForm(url.Values{"kind": {"custom"}, "tierNames": {"Top\nGood\nOkay\nWeak"}, "customCutoffs": {"1/4, 1/2, 3/4"}}))
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Top\nGood\nOkay\nWeak</textarea>") || !strings.Contains(body, `value="custom" data-wait checked`) {
+		t.Errorf("custom tiers from the named ones:\n%s", body)
+	}
+	for _, bad := range []url.Values{
+		{"tierNames": {" \n "}},
+		{"sizes": {"beta"}, "alpha": {"0"}, "beta": {"1"}},
+		{"sizes": {"geometric"}, "factor": {"none"}},
+		{"sizes": {"cubes"}},
+	} {
+		if status, body := display(bad); status != http.StatusBadRequest || !strings.Contains(body, `class="note error"`) {
+			t.Errorf("named tiers with %v: %d", bad, status)
+		}
+	}
+	if tm := c.load("letters").Display.Template; tm.Kind != "custom" {
+		t.Errorf("a bad form changed the saved template to %+v", tm)
+	}
+}
+
 func TestTierSizes(t *testing.T) {
 	_, c := start(t, t.TempDir())
 	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
@@ -1088,7 +1170,7 @@ func TestTierSizes(t *testing.T) {
 	// New lists start with even tiers, and the form offers the other
 	// kinds with their usual numbers filled in.
 	_, body := c.get(base + "/tiers")
-	for _, want := range []string{`<option value="even" selected>Nearest star</option>`, `name="factor" value="1.618033988749895"`, `<div class="for-beta" data-wait>`,
+	for _, want := range []string{`<option value="even" selected>Nearest tier</option>`, `name="factor" value="1.618033988749895"`, `<div class="for-beta" data-wait>`,
 		`<option value="best" selected>the best tier</option>`, `name="alpha" value="2"`, `name="beta" value="2"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("tier list page lacks %q", want)

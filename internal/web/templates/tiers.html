@@ -4,6 +4,7 @@
     <legend>Template</legend>
     <div class="kinds">
       <label class="check"><input type="radio" name="kind" value="stars"{{if eq .Form.Kind "stars"}} checked{{end}}> Stars</label>
+      <label class="check"><input type="radio" name="kind" value="named" data-wait{{if eq .Form.Kind "named"}} checked{{end}}> Named tiers</label>
       <label class="check"><input type="radio" name="kind" value="owl-newt"{{if eq .Form.Kind "owl-newt"}} checked{{end}}> OWL/NEWT</label>
       <label class="check"><input type="radio" name="kind" value="custom" data-wait{{if eq .Form.Kind "custom"}} checked{{end}}> Custom</label>
     </div>
@@ -12,14 +13,22 @@
       <label class="check"><input type="checkbox" name="skipZero"{{if .Form.SkipZero}} checked{{end}}> Start at 1 star, not 0</label>
       <label class="field">Split each star into <input type="number" name="divisions" min="1" value="{{.Form.Divisions}}"></label>
       <span class="muted small">1 means whole stars only, 2 gives half-stars.</span>
+    </div>
+    <span class="muted small for-names">Fill these in, then press Apply.</span>
+    <label class="field for-custom" data-wait>Name <input name="customName" value="{{.Form.CustomName}}" autocomplete="off"></label>
+    <label class="field for-names" data-wait>Tiers, best first, one per line
+      <textarea name="tierNames" rows="6" placeholder="S&#10;A&#10;B&#10;C">{{.Form.TierNames}}</textarea></label>
+    <label class="field for-custom" data-wait>Cut-offs between tiers, from 0 (worst) to 1 (best), as decimals or fractions
+      <textarea name="customCutoffs" rows="5" placeholder="1/3&#10;2/3">{{.Form.CustomCutoffs}}</textarea></label>
+    <div class="for-sized">
       <label class="field">Tier sizes
         <select name="sizes">
-          <option value="even"{{if eq .Form.Sizes "even"}} selected{{end}}>Nearest star</option>
+          <option value="even"{{if eq .Form.Sizes "even"}} selected{{end}}>Nearest tier</option>
           <option value="geometric"{{if eq .Form.Sizes "geometric"}} selected{{end}}>Geometric</option>
           <option value="beta"{{if eq .Form.Sizes "beta"}} selected{{end}}>Beta distribution</option>
         </select>
       </label>
-      <span class="muted small for-even">Each entry gets the nearest star, so the top and bottom tiers are half the size of the others.</span>
+      <span class="muted small for-even">Each entry gets the <span class="only-stars">nearest star</span><span class="only-named">nearest tier, as if the tiers stood evenly spaced from worst to best</span>, so the top and bottom tiers are half the size of the others.</span>
       <div class="for-geometric">
         <label class="field">Each tier is this many times the size of the one before
           <input name="factor" value="{{.Form.Factor}}" autocomplete="off"></label>
@@ -38,14 +47,6 @@
         </div>
         <span class="muted small">Cut [0, 1] into as many equal parts as there are tiers; each tier gets the share of a Beta(α, β) distribution that lies over its part. 1 and 1 give tiers all the same size; 2 and 2 make the middle tiers bigger; 1/2 and 1/2, the end tiers. A larger α makes the tiers near the top bigger, a larger β those near the bottom. Press Enter or Apply after changing them.</span>
       </div>
-    </div>
-    <div class="for-custom" data-wait>
-      <span class="muted small">Fill these in, then press Apply.</span>
-      <label class="field">Name <input name="customName" value="{{.Form.CustomName}}" autocomplete="off"></label>
-      <label class="field">Tiers, best first, one per line
-        <textarea name="customTiers" rows="6">{{.Form.CustomTiers}}</textarea></label>
-      <label class="field">Cut-offs between tiers, from 0 (worst) to 1 (best), as decimals or fractions
-        <textarea name="customCutoffs" rows="5" placeholder="1/3&#10;2/3">{{.Form.CustomCutoffs}}</textarea></label>
     </div>
   </fieldset>
   {{with .Chart}}{{template "chart" .}}{{end}}

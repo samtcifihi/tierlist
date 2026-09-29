@@ -310,13 +310,17 @@ The tiers run from the maximum number of stars down to the lowest tier in steps 
 
 The user does not enter cut-offs or ranges; they are generated, in one of three ways the user chooses (the **tier sizes**):
 
-- **Nearest star** (the default): the top and bottom tiers each cover `1/(2*(n-1))` of `[0, 1]` and every other tier covers `1/(n-1)`, so the cut-offs are at `(2k-1)/(2*(n-1))` for `k = 1, ..., n-1`. Each entry gets the star rating nearest its position.
+- **Nearest tier** (the default): the top and bottom tiers each cover `1/(2*(n-1))` of `[0, 1]` and every other tier covers `1/(n-1)`, so the cut-offs are at `(2k-1)/(2*(n-1))` for `k = 1, ..., n-1`. Each entry gets the star rating nearest its position.
 - **Geometric**: each tier is a fixed factor (φ, the golden ratio, 1.618033988749895 to the precision of a 64-bit float, unless the user picks another number above 0) times the size of the one before it, counting from the best tier, or from the worst if the user chooses. Above 1 the tiers grow away from where the counting starts, so by default the best tier is the smallest; below 1 they shrink; exactly 1 makes every tier the same size. The sizes are scaled to add up to 1, so any number of tiers, with any factor, covers `[0, 1]` exactly with the same ratio between every pair of neighbours.
-- **Beta**: two parameters, α and β, above 0. Cut `[0, 1]` into `n` equal parts; each tier gets the share of a Beta(α, β) distribution that lies over its part, so each cut-off `k/n` moves to the distribution's CDF at `k/n`. The distribution lives on `(0, 1)`, but the tiers still cover all of `[0, 1]`, ends included. Beta(1, 1) is the uniform distribution and gives tiers all exactly the same size (unlike nearest-star tiers, whose ends are half size); Beta(2, 2) makes the middle tiers bigger and the end tiers smaller, and Beta(½, ½) the other way round. A larger α makes the tiers near the top bigger, a larger β those near the bottom. When α = β the tiers are exactly symmetric.
+- **Beta**: two parameters, α and β, above 0. Cut `[0, 1]` into `n` equal parts; each tier gets the share of a Beta(α, β) distribution that lies over its part, so each cut-off `k/n` moves to the distribution's CDF at `k/n`. The distribution lives on `(0, 1)`, but the tiers still cover all of `[0, 1]`, ends included. Beta(1, 1) is the uniform distribution and gives tiers all exactly the same size (unlike nearest-tier sizes, whose ends are half size); Beta(2, 2) makes the middle tiers bigger and the end tiers smaller, and Beta(½, ½) the other way round. A larger α makes the tiers near the top bigger, a larger β those near the bottom. When α = β the tiers are exactly symmetric.
 
 The factor, α and β can be written as decimals or fractions, such as `1.618` or `1/2`. Extreme settings can make some tiers too small to hold any position but the end of `[0, 1]` they touch; they are kept, tiny and in order, rather than refused.
 
 The tier-placement logic only uses the number of tiers and their ranges. Fractional stars and whether 0 is included only change the tier names: 0–5 stars with half-stars and 0–10 whole stars are both 11 tiers with the same ranges, so they place every entry the same way.
+
+#### Named tiers
+
+Like stars, but the user names the tiers, best first and one per line, as for a custom template, and the program sizes them in any of the three ways it sizes star tiers, with `n` the number of names. With the default sizes, **nearest tier**, the tiers stand evenly spaced from the best, at 1, to the worst, at 0, and each entry gets the tier nearest its position, so the top and bottom tiers are half the size of the others. Geometric and Beta sizes work as for stars. A single name makes a single tier that holds everything. The names carry over when switching between named tiers and a custom template, so either can start from the other.
 
 #### OWL/NEWT
 
@@ -345,7 +349,7 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 
 The tier list page draws the chosen template as a probability density on `[0, 1]`, so its total area is 1. The horizontal axis gives each of the `n` tiers an equal slice, `1/n` wide, from the worst tier on the left to the best on the right, and the area above a tier's slice is the share of `[0, 1]`, and so of the list, that the tier gets: its height is `n` times that share. A dashed line marks height 1, where every tier would be the same size.
 
-- Nearest-star tiers make a flat step with half-height steps at either end.
+- Nearest-tier sizes make a flat step with half-height steps at either end.
 - Geometric tiers make a staircase, each step the factor times the one before.
 - Beta tiers are drawn as the Beta(α, β) density itself, a smooth curve rather than a step per tier; the area under it over each slice is exactly that tier's share. Where the density has no bound (at 0 when α < 1, at 1 when β < 1), the curve runs off the top of the chart instead of flattening the rest, and a narrow peak gets extra points so it is drawn at its full height.
 - OWL/NEWT and custom templates make a step per tier, like any other template.
@@ -358,7 +362,7 @@ While the options are being changed, the page fetches the chart for them from th
 
 - `internal/bayeselo`: fitting ratings, the draw setting and the ratings' uncertainty to the comparisons.
 - `internal/pairing`: choosing the next pair to compare.
-- `internal/tier`: tier templates (stars, OWL/NEWT, custom) and placing a ranked list into tiers.
+- `internal/tier`: tier templates (stars, named tiers, OWL/NEWT, custom) and placing a ranked list into tiers.
 - `internal/tierlist`: one tier list (entries, answers, focus and display options), saving and loading it, and tying it to the packages above.
 - `internal/web`: the pages, served from HTML templates, a style sheet and a small script embedded in the program.
 - `cmd/tierlist`: the program itself, which starts the server and opens the browser.
