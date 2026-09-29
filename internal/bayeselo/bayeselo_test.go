@@ -213,6 +213,26 @@ func TestProbabilities(t *testing.T) {
 	}
 }
 
+func TestLevels(t *testing.T) {
+	// Equal ratings with the prior's draw setting: "about the same" a third
+	// of the time, so 3 levels.
+	if l := fit(t, 4, nil).Levels(); !near(l, 3, 1e-9) {
+		t.Errorf("equal ratings: %g levels, want 3", l)
+	}
+	// Ratings spread evenly over 2400 Elo with a draw setting of 120 have
+	// room for about 2400 / (2 * 120) = 10 levels.
+	ratings := make([]float64, 401)
+	for i := range ratings {
+		ratings[i] = 6 * float64(i)
+	}
+	if l := (&Result{Ratings: ratings, DrawElo: 120}).Levels(); l < 10 || l > 12 {
+		t.Errorf("ratings spread over 2400 Elo: %g levels, want about 10", l)
+	}
+	if l := (&Result{Ratings: []float64{0}, DrawElo: 120}).Levels(); l != 0 {
+		t.Errorf("one entry: %g levels, want 0", l)
+	}
+}
+
 func TestFitRejects(t *testing.T) {
 	tests := []struct {
 		n  int

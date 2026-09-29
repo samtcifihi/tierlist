@@ -50,15 +50,35 @@ where `f(x) = 1 / (1 + 10^(-x/400))` is the usual Elo curve. The larger `θ`, th
 
 ### Draw setting
 
-The draw setting is estimated from the user's answers, along with the ratings. It has a prior of its own: one win, one loss and one draw between two equally rated entries. That prior alone puts `θ` at `400 log10(2)` (about 120 Elo), where "about the same" is exactly as likely as either side being better. It also keeps `θ` above 0 when the user has never answered "about the same", and finite when every answer has been.
+The draw setting says how close two entries have to be for the user to call them about the same. Two ways to picture it, both exact in the model:
+
+- It is the rating gap at which "better" becomes a coin flip. An entry rated `θ` above another is called better only half the time; the other half splits between "about the same" and the reverse.
+- It is the width of the "too close to call" zone. Summed over every rating gap, the probability of "about the same" comes to exactly `2θ`, so each entry is roughly about the same as anything rated within `θ` of it either way.
+
+With `θ` at about 120, for example:
+
+| Rating gap | Better | About the same | Worse |
+| --- | --- | --- | --- |
+| 0 | 33% | 33% | 33% |
+| 120 | 50% | 30% | 20% |
+| 240 | 67% | 22% | 11% |
+| 400 | 83% | 12% | 5% |
+
+Seen the other way round, a list whose ratings spread over `R` Elo has room for about `R / (2θ)` levels the user can tell apart. Exactly, the number of **levels** is 1 divided by the probability that two randomly chosen entries of the list would be called about the same. (The rule of thumb gets rough when `R` is not much bigger than `θ`.)
+
+The draw setting is estimated from the user's answers, along with the ratings, rather than chosen. A number of levels given up front would not pin it down: converting it needs the list's spread in Elo, which only the answers reveal, and a list may cover only part of its domain, so the same user says "about the same" more often in a list of close favorites than in a broad one. The answers measure `θ` directly, separately for each list, including how readily the user answers "about the same". Pairs are chosen to be close, so the share of "about the same" answers runs above the rate for random pairs; the model allows for that by judging each answer against its pair's rating gap.
+
+The draw setting has a prior of its own: one win, one loss and one draw between two equally rated entries. That prior alone puts `θ` at `400 log10(2)` (about 120 Elo), where "about the same" is exactly as likely as either side being better. It also keeps `θ` above 0 when the user has never answered "about the same", and finite when every answer has been.
 
 The entries' prior games against the dummy use the plain Elo curve (`θ = 0`), so they say nothing about the draw setting.
+
+**Levels readout.** Once every entry has been compared a few times, the program shows how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. (Before that, the ratings have not spread out yet and the number would be misleadingly low.)
 
 ### Fitting
 
 The ratings and the draw setting are their most probable values given the answers and the priors (the maximum of the posterior). The log-posterior is strictly concave, so there is exactly one maximum; the program finds it with Newton's method. The ratings' uncertainty, used for choosing pairs and for ± error bars, is the inverse of the negative Hessian of the log-posterior at the maximum.
 
-Because the maximum is unique, saved ratings only speed up the next fit: refitting the stored comparisons gives the same result.
+Because the maximum is unique, saved ratings only speed up the next fit: refitting the stored comparisons gives the same result. The fit depends only on the stored comparisons, not their order, so it can always be redone from scratch, for example after a change to the model, and the result is what that change would always have given. A refit cannot change which pairs were asked, since those were chosen with the old model, but that does not bias the ratings.
 
 ### Choosing the next pair
 

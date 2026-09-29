@@ -63,6 +63,25 @@ func (r *Result) DiffVar(i, j int) float64 {
 	return r.Cov(i, i) + r.Cov(j, j) - 2*r.Cov(i, j)
 }
 
+// Levels returns how many levels of quality the user tells apart among the
+// entries, by the model: 1 divided by the probability that two randomly
+// chosen entries would be judged about the same. It returns 0 for fewer
+// than two entries.
+func (r *Result) Levels() float64 {
+	n := len(r.Ratings)
+	if n < 2 {
+		return 0
+	}
+	same := 0.0
+	for i := range n {
+		for j := i + 1; j < n; j++ {
+			_, s, _ := Probabilities(r.Ratings[i]-r.Ratings[j], r.DrawElo)
+			same += s
+		}
+	}
+	return float64(n*(n-1)/2) / same
+}
+
 // Internally, ratings and the draw setting are in natural units, where the
 // Elo curve is the logistic function: nats = Elo * eloToNat.
 const eloToNat = math.Ln10 / 400
