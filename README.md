@@ -105,7 +105,7 @@ The factors are tuning details and may change.
 
 #### Focus mode
 
-The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, only pairs that include at least one of those entries are scored and presented.
+The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, only pairs that include at least one of those entries are scored and presented. Focus mode is saved with the list, so it stays on across sessions.
 
 ### Session state
 
@@ -116,11 +116,56 @@ Rating is meant to span multiple sessions. The program must save and reload:
 
 Loading that state must be enough to continue rating where a previous session left off.
 
+#### Saved files
+
+Each tier list is saved as one JSON file, by default in a `tierlist` folder in the user's configuration folder (`%AppData%\tierlist` on Windows). The file name comes from the list's name: its letters and digits in lower case, joined by hyphens, with a number added if the name is taken. Renaming the list later does not rename the file.
+
+A list file holds:
+
+- the list's name
+- the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes
+- every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
+- the focus set, while focus mode is on
+- the display options
+- each entry's last fitted rating and the last draw setting, which only speed up the next fit
+
+For example:
+
+```json
+{
+  "format": "tierlist",
+  "version": 1,
+  "name": "Films",
+  "entries": [
+    {"id":1,"name":"Alien","rating":115.86410113563915},
+    {"id":2,"name":"Brazil","rating":-115.86410113563912}
+  ],
+  "comparisons": [
+    {"a":2,"b":1,"answer":"b"}
+  ],
+  "display": {
+    "template": {
+      "kind": "stars",
+      "maxStars": 5
+    },
+    "convention": "top-closed",
+    "drawMargin": 0,
+    "groupRule": "middle-entry",
+    "prefer": "higher"
+  },
+  "drawElo": 102.09813849908167
+}
+```
+
+Here Brazil was shown first, and the user answered that the second entry, Alien, was better.
+
+A file is written to a temporary file first and then renamed into place, so a crash cannot leave a half-written list. The program refuses to save a list that would not load again, and refuses to load a file from a newer format version rather than silently dropping what it does not understand.
+
 ## Display
 
 Display is a separate step from rating. The user selects display options; those options do not change stored comparison results.
 
-The display options are the tier template and its options (including the interval convention), the draw-margin, and the group-placement settings, all described below.
+The display options are the tier template and its options (including the interval convention), the draw-margin, and the group-placement settings, all described below. They are saved with the list. A new list starts with 0–5 stars, the top tier closed, a draw-margin of 0, the middle-entry rule, and the higher tier when a group's middle entries fall in different tiers.
 
 ### Ranked list
 
@@ -222,6 +267,7 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 - `internal/bayeselo`: fitting ratings, the draw setting and the ratings' uncertainty to the comparisons.
 - `internal/pairing`: choosing the next pair to compare.
 - `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
+- `internal/tierlist`: one tier list (entries, answers, focus and display options), saving and loading it, and tying it to the packages above.
 
 ## Build
 
