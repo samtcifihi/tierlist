@@ -282,10 +282,9 @@ func TestEntriesCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the CSV back: %v\n%s", err, text)
 	}
-	// The shown entries, best first, with the ratings the page shows, the
-	// full width of each rating's 95% interval (1.96 standard deviations
-	// either side, give or take rounding) and the answer counts. Zardoz is
-	// removed, so it is left out.
+	// The shown entries, best first, with the ratings and ± uncertainties
+	// (one standard deviation) the page shows, and the answer counts.
+	// Zardoz is removed, so it is left out.
 	l := c.load("films")
 	fit, err := l.Fit()
 	if err != nil {
@@ -299,9 +298,8 @@ func TestEntriesCSV(t *testing.T) {
 	counts := l.Counts()
 	for k, e := range want {
 		rec := records[k+1]
-		ci, err := strconv.Atoi(rec[2])
-		if rec[0] != e.Name || rec[1] != fmt.Sprintf("%.0f", fit.Points(e.ID)) || err != nil ||
-			math.Abs(float64(ci)-3.92*fit.PointsSD(e.ID)) > 0.6 || rec[3] != strconv.Itoa(counts[e.ID]) {
+		if rec[0] != e.Name || rec[1] != fmt.Sprintf("%.0f", fit.Points(e.ID)) || rec[2] != fmt.Sprintf("%.0f", fit.PointsSD(e.ID)) ||
+			rec[3] != strconv.Itoa(counts[e.ID]) || !strings.Contains(body, "± "+rec[2]+"<") {
 			t.Errorf("row %d: %q, want %s with rating %.1f ± %.1f and %d answers", k+1, rec, e.Name, fit.Points(e.ID), fit.PointsSD(e.ID), counts[e.ID])
 		}
 	}

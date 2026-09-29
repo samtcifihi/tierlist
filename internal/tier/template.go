@@ -102,6 +102,22 @@ func (t Template) TierAt(p *big.Rat) int {
 	return len(t.Tiers) - 1 - below
 }
 
+// Shares returns the share of [0, 1] that each tier covers, worst tier
+// first. t must be well-formed.
+func (t Template) Shares() []float64 {
+	shares := make([]float64, len(t.Tiers))
+	below := new(big.Rat)
+	for k := range shares {
+		above := big.NewRat(1, 1)
+		if k < len(t.Cutoffs) {
+			above = t.Cutoffs[k]
+		}
+		shares[k], _ = new(big.Rat).Sub(above, below).Float64()
+		below = above
+	}
+	return shares
+}
+
 var (
 	fractionRE = regexp.MustCompile(`^(\d+)\s*/\s*(\d+)$`)
 	decimalRE  = regexp.MustCompile(`^(\d*)(?:\.(\d*))?$`)

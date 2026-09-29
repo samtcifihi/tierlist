@@ -25,6 +25,37 @@ for (const form of document.querySelectorAll("form[data-autosubmit]")) {
   });
 }
 
+// A form marked data-chart has a chart (#chart) that follows the form as
+// it is filled in, before the changes are applied: after each change the
+// chart is fetched again from the URL in data-chart. Options that don't
+// make sense yet leave the old chart, dimmed, with the reason under it.
+for (const form of document.querySelectorAll("form[data-chart]")) {
+  let timer;
+  let asked = 0;
+  form.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const n = ++asked;
+      try {
+        const res = await fetch(form.dataset.chart + "?" + new URLSearchParams(new FormData(form)));
+        const text = await res.text();
+        const chart = document.getElementById("chart");
+        if (n !== asked || !chart) {
+          return; // a later change is on its way
+        }
+        if (res.ok) {
+          chart.outerHTML = text;
+        } else {
+          chart.classList.add("stale");
+          chart.querySelector(".chart-note").textContent = text;
+        }
+      } catch {
+        // The program may have been stopped; the chart stays as it was.
+      }
+    }, 150);
+  });
+}
+
 // A button marked data-dialog opens the dialog with that ID, such as the
 // one that asks before deleting a list.
 for (const button of document.querySelectorAll("[data-dialog]")) {

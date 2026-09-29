@@ -1,5 +1,5 @@
 {{define "content"}}
-<form method="post" action="{{.List.URL}}/display" class="display" data-autosubmit>
+<form method="post" action="{{.List.URL}}/display" class="display" data-autosubmit data-chart="{{.List.URL}}/chart">
   <fieldset>
     <legend>Template</legend>
     <div class="kinds">
@@ -48,6 +48,7 @@
         <textarea name="customCutoffs" rows="5" placeholder="1/3&#10;2/3">{{.Form.CustomCutoffs}}</textarea></label>
     </div>
   </fieldset>
+  {{with .Chart}}{{template "chart" .}}{{end}}
   <fieldset>
     <legend>Placement</legend>
     <label class="field">An entry exactly on a cut-off goes
@@ -96,4 +97,26 @@
 <p>{{.Empty}}</p>
 <p><a class="button primary" href="{{.List.URL}}/entries">Add entries</a></p>
 {{end}}
+{{end}}
+
+{{define "chart"}}
+<fieldset class="chart" id="chart">
+  <legend>Distribution</legend>
+  <div class="chart-plot">
+    <div class="chart-y" aria-hidden="true">
+      <span style="bottom: 100%">{{.Top}}</span>
+      {{with .OneAt}}<span style="bottom: {{.}}%">1</span>{{end}}
+      <span style="bottom: 0%">0</span>
+    </div>
+    <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" role="img" aria-label="The tier sizes as a density on [0, 1]">
+      <path class="chart-area" d="{{.Area}}"/>
+      {{range .Dividers}}<line class="chart-divider" x1="{{.}}" y1="0" x2="{{.}}" y2="1000" vector-effect="non-scaling-stroke"/>{{end}}
+      <line class="chart-one" x1="0" y1="{{.OneY}}" x2="1000" y2="{{.OneY}}" vector-effect="non-scaling-stroke"/>
+      <path class="chart-line" d="{{.Line}}" vector-effect="non-scaling-stroke"/>
+      {{range .Parts}}<rect class="chart-part" x="{{.X}}" y="0" width="{{.Width}}" height="1000"><title>{{.Title}}</title></rect>{{end}}
+    </svg>
+  </div>
+  <div class="chart-x" aria-hidden="true"><span>0</span><span>1</span></div>
+  <p class="muted small chart-note">{{if .Preview}}<strong>Not applied yet:</strong> press Enter or Apply. {{end}}{{.Caption}}</p>
+</fieldset>
 {{end}}

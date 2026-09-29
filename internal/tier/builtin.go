@@ -249,6 +249,18 @@ func betaCDF(x, a, b float64) float64 {
 	return front * betaFraction(x, a, b) / a
 }
 
+// BetaPDF returns the density of the Beta(a, b) distribution at x, for x in
+// (0, 1), and 0 outside it.
+func BetaPDF(x, a, b float64) float64 {
+	if !(x > 0 && x < 1) {
+		return 0
+	}
+	lab, _ := math.Lgamma(a + b)
+	la, _ := math.Lgamma(a)
+	lb, _ := math.Lgamma(b)
+	return math.Exp(lab - la - lb + (a-1)*math.Log(x) + (b-1)*math.Log1p(-x))
+}
+
 // betaFraction evaluates the continued fraction for the incomplete beta
 // function by the modified Lentz method (as in Numerical Recipes, section
 // 6.4).

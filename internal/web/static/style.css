@@ -237,14 +237,20 @@ dialog.confirm .actions { justify-content: flex-end; margin: 1.25rem 0 0; }
 /* Tier list */
 .display {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
   gap: 1rem;
   align-items: start;
   margin-bottom: 1.5rem;
 }
+/* Side by side, the template's options sit left of the chart they shape,
+   with the placement options under the chart. */
+@media (min-width: 44rem) {
+  .display { grid-template-columns: 1fr 1fr; }
+  .display > fieldset:first-child { grid-row: span 2; }
+}
 fieldset {
   display: grid;
   gap: .6rem;
+  min-inline-size: 0;
   margin: 0;
   padding: .75rem 1rem 1rem;
   background: var(--card);
@@ -254,6 +260,7 @@ fieldset {
 legend { font-weight: 600; padding: 0 .3rem; }
 .kinds { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; }
 label.field { display: grid; gap: .2rem; }
+label.field select { min-width: 0; }
 label.check { display: flex; gap: .4rem; align-items: center; }
 .for-stars, .for-custom, .for-geometric, .for-beta, .for-even { display: none; gap: .6rem; }
 .display:has(input[value="stars"]:checked) .for-stars,
@@ -264,6 +271,23 @@ label.check { display: flex; gap: .4rem; align-items: center; }
 .params { display: flex; gap: 1rem; }
 .params input { width: 6rem; }
 .display .apply { grid-column: 1 / -1; justify-self: start; }
+
+/* The tier sizes chart: SVG stretched to its box, with HTML labels so the
+   text keeps its size. */
+.chart { gap: .3rem; }
+.chart-plot { display: grid; grid-template-columns: 2.25rem 1fr; margin-top: .5rem; }
+.chart-y { position: relative; font-size: .75rem; color: var(--muted); }
+.chart-y span { position: absolute; right: .4rem; line-height: 1; transform: translateY(50%); }
+.chart svg { display: block; width: 100%; height: 8rem; border-left: 1px solid var(--muted); border-bottom: 1px solid var(--muted); }
+.chart-x { display: flex; justify-content: space-between; margin: -.1rem 0 0 2.25rem; font-size: .75rem; color: var(--muted); }
+.chart-divider { stroke: var(--line); }
+.chart-one { stroke: var(--muted); stroke-dasharray: 4 4; }
+.chart-area { fill: var(--accent-soft); }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.chart-part { fill: transparent; }
+.chart-part:hover { fill: color-mix(in srgb, var(--accent) 15%, transparent); }
+.chart.stale svg { opacity: .35; }
+.chart-note { margin: .2rem 0 0; }
 
 .tierlist { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }
 .tierlist h1 { font-size: 1.3rem; margin-bottom: .75rem; }

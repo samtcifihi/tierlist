@@ -1,7 +1,9 @@
 package tier
 
 import (
+	"math"
 	"math/big"
+	"slices"
 	"testing"
 )
 
@@ -46,6 +48,36 @@ func mustHogwarts(t *testing.T, c Convention) Template {
 		t.Fatal(err)
 	}
 	return tmpl
+}
+
+func TestShares(t *testing.T) {
+	for _, c := range []struct {
+		tmpl Template
+		want []float64
+	}{
+		// Nearest star: half-size end tiers.
+		{mustStars(t, StarOptions{Max: 5}, TopClosed), []float64{0.1, 0.2, 0.2, 0.2, 0.2, 0.1}},
+		// Troll is the bottom 16/31, Outstanding the top 1/31.
+		{mustHogwarts(t, BottomClosed), []float64{16.0 / 31, 5.0 / 31, 4.0 / 31, 3.0 / 31, 2.0 / 31, 1.0 / 31}},
+		{mustNew(t, "One", []string{"All"}, nil, TopClosed), []float64{1}},
+		{mustNew(t, "Two", []string{"Top", "Rest"}, rats("0.9"), TopClosed), []float64{0.9, 0.1}},
+	} {
+		if got := c.tmpl.Shares(); !slices.Equal(got, c.want) {
+			t.Errorf("%s: shares %v, want %v", c.tmpl.Name, got, c.want)
+		}
+	}
+	// Geometric tiers, from the best, each 1.5 times the one before.
+	shares := mustStars(t, StarOptions{Max: 10, Sizes: Sizes{Kind: GeometricTiers, Factor: 1.5}}, TopClosed).Shares()
+	sum := 0.0
+	for k, s := range shares {
+		sum += s
+		if k > 0 && math.Abs(shares[k-1]/s-1.5) > 1e-12 {
+			t.Errorf("shares %d and %d: ratio %v, want 1.5", k-1, k, shares[k-1]/s)
+		}
+	}
+	if len(shares) != 11 || math.Abs(sum-1) > 1e-15 {
+		t.Errorf("%d geometric shares adding up to %v", len(shares), sum)
+	}
 }
 
 func TestParseCutoff(t *testing.T) {

@@ -12,8 +12,8 @@ Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tie
 
 - **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
 - **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)). Below, a quiet line says what percentile the two entries of the latest answer are now at, and **Start top mode** narrows the pairs to the best entries (see [Top mode](#top-mode)).
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)). **CSV, to copy** opens a box with the same list as CSV, to paste into a spreadsheet: a header row, then each entry's name, rating, CI width and number of answers. The CI width is the full width of the rating's 95% interval, which reaches 1.96 times its ± uncertainty either side, in points; removed entries are left out.
-- **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)".
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)). **CSV, to copy** opens a box with the same list as CSV, to paste into a spreadsheet: a header row, then each entry's name, rating, CI width and number of answers. The CI width is the ± uncertainty listed with the rating, one standard deviation, in points; removed entries are left out.
+- **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)". Next to the template's options, a chart draws the template as a distribution (see [Distribution chart](#distribution-chart)); it follows the options as they are typed in, before they are applied.
 - **Answers:** every answer so far in a table, newest first and numbered in the order given: the entry judged better, `>`, and the other entry, or both entries with `≈` between them for "about the same". Under "Filter by entry", tick entries and choose whether to see the answers involving any of them or only the answers between two of them (which needs at least two ticked). An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
@@ -340,6 +340,19 @@ When creating a custom template, the user gives the cut-offs and chooses the int
 Cut-offs may be entered as decimals or as fractions.
 
 The interval convention, plus the requirement that the cut-offs partition `[0, 1]`, are what the well-formedness check should enforce for custom templates.
+
+### Distribution chart
+
+The tier list page draws the chosen template as a probability density on `[0, 1]`, so its total area is 1. The horizontal axis gives each of the `n` tiers an equal slice, `1/n` wide, from the worst tier on the left to the best on the right, and the area above a tier's slice is the share of `[0, 1]`, and so of the list, that the tier gets: its height is `n` times that share. A dashed line marks height 1, where every tier would be the same size.
+
+- Nearest-star tiers make a flat step with half-height steps at either end.
+- Geometric tiers make a staircase, each step the factor times the one before.
+- Beta tiers are drawn as the Beta(α, β) density itself, a smooth curve rather than a step per tier; the area under it over each slice is exactly that tier's share. Where the density has no bound (at 0 when α < 1, at 1 when β < 1), the curve runs off the top of the chart instead of flattening the rest, and a narrow peak gets extra points so it is drawn at its full height.
+- Hogwarts and custom templates make a step per tier, like any other template.
+
+The top of the chart is a round number a little above the highest point. Hovering over a tier's slice names the tier and its share (for up to 200 tiers).
+
+While the options are being changed, the page fetches the chart for them from the program after each change, before they are applied, and says so under the chart; options that don't make a template yet leave the last chart, dimmed, with the reason under it.
 
 ## Code layout
 

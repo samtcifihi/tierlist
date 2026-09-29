@@ -3,6 +3,7 @@ package tierlist
 import (
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/samtcifihi/tierlist/internal/bayeselo"
@@ -75,6 +76,38 @@ func (d Display) Check() error {
 	}
 	_, err := d.options()
 	return err
+}
+
+// A Shape is how a display's tier template shares out [0, 1] among its
+// tiers, for drawing: cut [0, 1] into one equal part per tier, worst tier
+// first, and each tier's share is the area over its part.
+type Shape struct {
+	// Tiers and Shares hold the tier names and the share of [0, 1] each
+	// tier covers, worst tier first.
+	Tiers  []string
+	Shares []float64
+	// Alpha and Beta, with Beta tier sizes, are the parameters of the Beta
+	// distribution whose density the shares come from; otherwise both
+	// are 0.
+	Alpha, Beta float64
+}
+
+// Shape returns the shape of the tier template the options describe.
+func (d Display) Shape() (Shape, error) {
+	t, err := d.template()
+	if err != nil {
+		return Shape{}, err
+	}
+	s := Shape{Tiers: slices.Clone(t.Tiers), Shares: t.Shares()}
+	slices.Reverse(s.Tiers)
+	if d.Template.Kind == "stars" && d.Template.Sizes == "beta" {
+		sizes, err := d.Template.sizes()
+		if err != nil {
+			return Shape{}, err
+		}
+		s.Alpha, s.Beta = sizes.Alpha, sizes.Beta
+	}
+	return s, nil
 }
 
 // template builds the tier template the options describe.

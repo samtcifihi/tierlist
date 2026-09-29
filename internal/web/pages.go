@@ -555,19 +555,15 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	s.render(w, http.StatusOK, "entries", v)
 }
 
-// z95 is how many standard deviations a 95% interval of a normal
-// distribution reaches either side of its mean.
-const z95 = 1.959963984540054
-
 // entriesCSV writes the rows as CSV under a header row: each entry's name,
-// its rating in points as the page shows it, the width of the rating's
-// 95% interval in points, and its number of answers.
+// its rating and the ± uncertainty of it (one standard deviation), in
+// points as the page shows them, and its number of answers.
 func entriesCSV(rows []entryRow, fit *tierlist.Fit) string {
 	var b strings.Builder
 	w := csv.NewWriter(&b)
 	w.Write([]string{"entry name", "rating", "CI width", "number of answers"})
 	for _, r := range rows {
-		w.Write([]string{r.Name, r.Rating, fmt.Sprintf("%.0f", 2*z95*fit.PointsSD(r.ID)), strconv.Itoa(r.Answers)})
+		w.Write([]string{r.Name, r.Rating, fmt.Sprintf("%.0f", fit.PointsSD(r.ID)), strconv.Itoa(r.Answers)})
 	}
 	w.Flush() // writing to a strings.Builder cannot fail
 	return b.String()
@@ -725,6 +721,7 @@ func (s *Server) setFocus(w http.ResponseWriter, r *http.Request, ol *openList) 
 type tiersView struct {
 	view
 	Form     displayForm
+	Chart    *chartView // the saved template's tier sizes
 	Rows     []tierRow
 	Text     string // the tier list as plain text
 	TextRows int    // lines for its text box, with room for a scroll bar
@@ -792,6 +789,10 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 	if formErr != "" {
 		v.Error = formErr
 	}
+	if shape, err := l.Display.Shape(); err == nil {
+		chart := shapeChart(shape, l.Display.Template.Kind == "stars")
+		v.Chart = &chart
+	}
 	rows, err := l.Tiers()
 	switch {
 	case errors.Is(err, tier.ErrTooFewEntries) && len(l.Shown()) == 0:
@@ -852,7 +853,25 @@ func (s *Server) setDisplay(w http.ResponseWriter, r *http.Request, ol *openList
 
 // parseDisplay reads the display options form.
 func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
-	f := displayForm{
+	f := readDisplayForm(r)
+	d := tierlist.Display{Convention: f.Convention, GroupRule: f.GroupRule, Prefer: f.Prefer}
+	margin, err := strconv.ParseFloat(f.DrawMargin, 64)
+	if err != nil || !(margin >= 0) || math.IsInf(margin, 1) {
+		return d, f, errors.New("the draw-margin must be a number, 0 or more")
+	}
+	d.DrawMargin = margin
+	if d.Template, err = f.template(); err != nil {
+		return d, f, err
+	}
+	if err := d.Check(); err != nil {
+		return d, f, err
+	}
+	return d, f, nil
+}
+
+// readDisplayForm reads the display options form as it was filled in.
+func readDisplayForm(r *http.Request) displayForm {
+	return displayForm{
 		Kind: r.FormValue("kind"), MaxStars: strings.TrimSpace(r.FormValue("maxStars")),
 		SkipZero: r.FormValue("skipZero") != "", Divisions: strings.TrimSpace(r.FormValue("divisions")),
 		Sizes: cmp.Or(r.FormValue("sizes"), "even"), Factor: strings.TrimSpace(r.FormValue("factor")),
@@ -862,34 +881,34 @@ func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
 		DrawMargin: strings.TrimSpace(r.FormValue("drawMargin")), GroupRule: r.FormValue("groupRule"),
 		Prefer: r.FormValue("prefer"),
 	}
-	d := tierlist.Display{Convention: f.Convention, GroupRule: f.GroupRule, Prefer: f.Prefer}
-	margin, err := strconv.ParseFloat(f.DrawMargin, 64)
-	if err != nil || !(margin >= 0) || math.IsInf(margin, 1) {
-		return d, f, errors.New("the draw-margin must be a number, 0 or more")
-	}
-	d.DrawMargin = margin
+}
+
+// template reads the template the form chooses. It does not check that
+// the template can be built; Display.Check does.
+func (f displayForm) template() (tierlist.Template, error) {
 	switch f.Kind {
 	case "stars":
 		maxStars, err1 := strconv.Atoi(f.MaxStars)
 		divisions, err2 := strconv.Atoi(cmp.Or(f.Divisions, "1"))
 		if err1 != nil || err2 != nil {
-			return d, f, errors.New("the number of stars and the parts per star must be whole numbers")
+			return tierlist.Template{}, errors.New("the number of stars and the parts per star must be whole numbers")
 		}
 		if divisions == 1 {
 			divisions = 0
 		}
-		d.Template = tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions}
+		t := tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions}
 		switch f.Sizes {
 		case "even":
 		case "geometric":
-			d.Template.Sizes, d.Template.Factor, d.Template.From = f.Sizes, f.Factor, f.From
+			t.Sizes, t.Factor, t.From = f.Sizes, f.Factor, f.From
 		case "beta":
-			d.Template.Sizes, d.Template.Alpha, d.Template.Beta = f.Sizes, f.Alpha, f.Beta
+			t.Sizes, t.Alpha, t.Beta = f.Sizes, f.Alpha, f.Beta
 		default:
-			return d, f, errors.New("choose how big the tiers are")
+			return tierlist.Template{}, errors.New("choose how big the tiers are")
 		}
+		return t, nil
 	case "hogwarts":
-		d.Template = tierlist.Template{Kind: "hogwarts"}
+		return tierlist.Template{Kind: "hogwarts"}, nil
 	case "custom":
 		var tiers []string
 		for _, line := range strings.Split(f.CustomTiers, "\n") {
@@ -898,20 +917,15 @@ func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
 			}
 		}
 		if len(tiers) == 0 {
-			return d, f, errors.New("enter the tier names, best first, one per line")
+			return tierlist.Template{}, errors.New("enter the tier names, best first, one per line")
 		}
 		cutoffs, err := sortedCutoffs(f.CustomCutoffs)
 		if err != nil {
-			return d, f, err
+			return tierlist.Template{}, err
 		}
-		d.Template = tierlist.Template{Kind: "custom", Name: cmp.Or(f.CustomName, "Custom"), Tiers: tiers, Cutoffs: cutoffs}
-	default:
-		return d, f, errors.New("choose a template")
+		return tierlist.Template{Kind: "custom", Name: cmp.Or(f.CustomName, "Custom"), Tiers: tiers, Cutoffs: cutoffs}, nil
 	}
-	if err := d.Check(); err != nil {
-		return d, f, err
-	}
-	return d, f, nil
+	return tierlist.Template{}, errors.New("choose a template")
 }
 
 // sortedCutoffs reads cut-offs written one per line or separated by commas

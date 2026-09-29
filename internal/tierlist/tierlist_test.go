@@ -657,3 +657,29 @@ func TestDisplayOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestShape(t *testing.T) {
+	// 0–10 stars, nearest star: the end tiers cover half as much.
+	s, err := DefaultDisplay().Shape()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Tiers) != 11 || s.Tiers[0] != "0" || s.Tiers[10] != "10" || len(s.Shares) != 11 ||
+		s.Shares[0] != 0.05 || s.Shares[5] != 0.1 || s.Shares[10] != 0.05 || s.Alpha != 0 || s.Beta != 0 {
+		t.Errorf("default shape %+v", s)
+	}
+	// The larger β makes the bottom tiers bigger.
+	d := DefaultDisplay()
+	d.Template = Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "1/2", Beta: "3"}
+	if s, err := d.Shape(); err != nil || len(s.Shares) != 6 || s.Alpha != 0.5 || s.Beta != 3 || !(s.Shares[0] > s.Shares[5]) {
+		t.Errorf("Beta(1/2, 3) shape %+v, %v", s, err)
+	}
+	d.Template = Template{Kind: "hogwarts"}
+	if s, err := d.Shape(); err != nil || s.Tiers[0] != "Troll" || s.Shares[0] != 16.0/31 || s.Alpha != 0 {
+		t.Errorf("Hogwarts shape %+v, %v", s, err)
+	}
+	d.Template = Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "0", Beta: "3"}
+	if _, err := d.Shape(); err == nil {
+		t.Error("shape of Beta(0, 3): want an error")
+	}
+}

@@ -192,6 +192,49 @@ func TestBetaCDF(t *testing.T) {
 	}
 }
 
+// Reference values from scipy.stats.beta.pdf.
+func TestBetaPDF(t *testing.T) {
+	for _, c := range []struct{ x, a, b, want, tol float64 }{
+		{0.3, 2, 2, 1.26, 1e-14},
+		{0.5, 2, 2, 1.5, 1e-14},
+		{0.25, 0.5, 0.5, 0.7351051938957226, 1e-14},
+		{0.001, 0.5, 0.5, 10.070879119947092, 1e-14},
+		{0.8, 5, 2, 2.4576, 1e-14},
+		{0.5, 2000, 2000, 50.45949662334133, 1e-11},
+		{0.51, 2000, 2000, 22.678356346730215, 1e-11},
+		{0.02, 2, 50, 18.951687433105086, 1e-13},
+		{0.5, 1e6, 1e6, 1128.379026048125, 1e-8},
+		{0.5005, 1e6, 1e6, 415.1076530860914, 1e-8},
+		{0.9, 7.5, 1.25, 3.9612879580556313, 1e-13},
+		{0.1, 1, 3, 2.43, 1e-14},
+		{1e-9, 0.1, 0.1, 6385738.951130342, 1e-13},
+		{0.6, 1, 1, 1, 1e-15},
+		{0.999, 3, 0.2, 66.18124050207096, 1e-13},
+		{0, 2, 2, 0, 0},
+		{1, 0.5, 0.5, 0, 0},
+		{-0.5, 1, 1, 0, 0},
+	} {
+		if got := BetaPDF(c.x, c.a, c.b); math.Abs(got-c.want) > c.tol*c.want {
+			t.Errorf("BetaPDF(%g, %g, %g) = %.17g, want %.17g", c.x, c.a, c.b, got, c.want)
+		}
+	}
+	// Each Beta tier's share is the density's area over its equal part. (The
+	// midpoint sums need densities without sharp ends to match closely.)
+	for _, ab := range [][2]float64{{2, 5}, {3, 3}, {1, 4}, {7.5, 2.5}} {
+		tmpl := mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: ab[0], Beta: ab[1]}}, TopClosed)
+		const steps = 20000
+		for k, share := range tmpl.Shares() {
+			area := 0.0
+			for i := range steps {
+				area += BetaPDF((float64(k)+(float64(i)+0.5)/steps)/6, ab[0], ab[1]) / (6 * steps)
+			}
+			if math.Abs(area-share) > 1e-8 {
+				t.Errorf("Beta(%g, %g), tier %d from the bottom: area %.12f, share %.12f", ab[0], ab[1], k, area, share)
+			}
+		}
+	}
+}
+
 func TestStarsRejects(t *testing.T) {
 	bad := []StarOptions{
 		{Max: 2},
