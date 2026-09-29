@@ -11,8 +11,8 @@ This project uses [just](https://github.com/casey/just), not make.
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
 - **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
-- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
+- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)).
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
 - **Answers:** every answer so far in a table, newest first and numbered in the order given: the entry judged better, `>`, and the other entry, or both entries with `≈` between them for "about the same". Under "Filter by entry", tick entries and choose whether to see the answers involving any of them or only the answers between two of them (which needs at least two ticked). An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
 
@@ -53,6 +53,14 @@ The program presents two real entries and the user chooses one of:
 Each answer is a result the Bayes Elo calculation uses. The finished comparison record is stored.
 
 **Undo** takes back the most recent answer and asks that question again. It can be repeated, and works across sessions, since answers are saved in order.
+
+#### Ignoring
+
+Instead of answering, the user can **ignore** the first entry, the pair, or the second entry, for example an entry they don't recognize, or a pair they can't call but don't want to answer "about the same" either. An ignored pair isn't asked again, and an ignored entry isn't asked about at all, until the user presses **Reset ignores** on the Entries page; the rating page offers it too once everything left to ask is ignored. Ignores are saved with the list.
+
+Ignoring isn't an answer: it changes no rating, and an ignored entry stays in the tier list with the rating its answers so far give it. It is left out of the levels readout, though, since the user may not know it.
+
+Undo takes back ignores as well as answers, newest first, and asks the pair again, the same way round. Ignores made before the program was last started can't be undone one by one, only reset together.
 
 ### Model
 
@@ -121,7 +129,7 @@ Because the maximum is unique, saved ratings only speed up the next fit: refitti
 
 ### Choosing the next pair
 
-By default, the program scores every candidate pair and presents the one with the highest score, breaking ties at random. The score is the expected information the comparison would give Bayes Elo, adjusted as described below.
+By default, the program scores every candidate pair (two entries that are neither removed nor ignored, in a pair that isn't ignored) and presents the one with the highest score, breaking ties at random. The score is the expected information the comparison would give Bayes Elo, adjusted as described below.
 
 **Expected information.** For entries A and B, pairs are ranked by
 
@@ -173,6 +181,7 @@ A list file holds:
 - the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes
 - every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
 - the focus set, while focus mode is on
+- the ignored entries and pairs, until they are reset
 - the display options, with the draw-margin in the points the pages show
 - each entry's last fitted rating and the last draw setting, in Elo as the model has them (ratings relative to the dummy at 0, not the points the pages show), which only speed up the next fit
 
@@ -193,7 +202,7 @@ For example:
   "display": {
     "template": {
       "kind": "stars",
-      "maxStars": 5
+      "maxStars": 10
     },
     "convention": "top-closed",
     "drawMargin": 0,
@@ -212,7 +221,7 @@ A file is written to a temporary file first and then renamed into place, so a cr
 
 Display is a separate step from rating. The user selects display options; those options do not change stored comparison results.
 
-The display options are the tier template and its options (including the interval convention), the draw-margin, and the group-placement settings, all described below. They are saved with the list. A new list starts with 0–5 stars, the top tier closed, a draw-margin of 0, the middle-entry rule, and the higher tier when a group's middle entries fall in different tiers.
+The display options are the tier template and its options (including the interval convention), the draw-margin, and the group-placement settings, all described below. They are saved with the list. A new list starts with 0–10 stars, the top tier closed, a draw-margin of 0, the middle-entry rule, and the higher tier when a group's middle entries fall in different tiers.
 
 ### Ranked list
 

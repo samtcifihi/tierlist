@@ -59,11 +59,30 @@ type openList struct {
 	// them: the pair on the rating page, then the ones shown coming up.
 	// Once shown, a pair stays lined up until it is asked.
 	queue [][2]int
+	// done holds what the rating page did while the program has been
+	// running, newest last, so that Undo can take back answers and ignores
+	// in order. Answers from before are still in the list itself.
+	done []done
+}
+
+// A done is an answer, or an ignore of the pair shown or one of its
+// entries.
+type done struct {
+	ignore string // what was ignored: "a", "b" or "pair"; "" for an answer
+	a, b   int    // the pair shown, by entry ID
 }
 
 // upcoming is how many pairs the rating page shows coming up after the
 // one it asks.
 const upcoming = 4
+
+// asked takes the pair a, b off the front of the queue, once it has been
+// answered or ignored.
+func (ol *openList) asked(a, b int) {
+	if len(ol.queue) > 0 && ol.queue[0] == [2]int{a, b} {
+		ol.queue = ol.queue[1:]
+	}
+}
 
 // replan keeps the pair being asked but forgets the ones coming up, so
 // that they are chosen again for a list whose entries or focus changed.
@@ -119,6 +138,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /lists/{list}/rate", s.withList(s.rate))
 	mux.HandleFunc("POST /lists/{list}/answer", s.withList(s.answer))
 	mux.HandleFunc("POST /lists/{list}/undo", s.withList(s.undo))
+	mux.HandleFunc("POST /lists/{list}/ignore", s.withList(s.ignore))
+	mux.HandleFunc("POST /lists/{list}/ignores/reset", s.withList(s.resetIgnores))
 	mux.HandleFunc("GET /lists/{list}/entries", s.withList(s.entries))
 	mux.HandleFunc("POST /lists/{list}/entries", s.withList(s.addEntries))
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/rename", s.withList(s.renameEntry))

@@ -80,21 +80,25 @@ func (f *Fit) drawMarginElo(points float64) float64 {
 const LevelsAfter = 3
 
 // Levels returns how many levels of quality the user tells apart among the
-// shown entries (see bayeselo.Result.Levels), and whether every shown entry
-// has at least LevelsAfter answers yet.
+// shown entries (see bayeselo.Result.Levels), and whether every one of them
+// has at least LevelsAfter answers yet. Ignored entries are left out, as
+// the user may not know them.
 func (l *List) Levels() (levels float64, ready bool, err error) {
 	fit, err := l.Fit()
 	if err != nil {
 		return 0, false, err
 	}
 	counts := l.Counts()
-	shown := l.Shown()
-	ready = len(shown) >= 2
-	ratings := make([]float64, len(shown))
-	for k, e := range shown {
-		ratings[k] = fit.Rating(e.ID)
+	var ratings []float64
+	ready = true
+	for _, e := range l.Shown() {
+		if l.EntryIgnored(e.ID) {
+			continue
+		}
+		ratings = append(ratings, fit.Rating(e.ID))
 		ready = ready && counts[e.ID] >= LevelsAfter
 	}
+	ready = ready && len(ratings) >= 2
 	return (&bayeselo.Result{Ratings: ratings, DrawElo: fit.DrawElo()}).Levels(), ready, nil
 }
 
@@ -142,7 +146,8 @@ func (l *List) history(index map[int]int) []bayeselo.Comparison {
 }
 
 // NextPair returns the IDs of the next two entries to compare, in the
-// order to show them, honoring focus mode and leaving out removed entries.
+// order to show them, honoring focus mode and leaving out removed and
+// ignored entries and ignored pairs.
 // rng breaks ties and picks the sides.
 func (l *List) NextPair(rng *rand.Rand) (first, second int, err error) {
 	pairs, err := l.NextPairs(nil, 1, rng)
@@ -152,10 +157,16 @@ func (l *List) NextPair(rng *rand.Rand) (first, second int, err error) {
 	return pairs[0][0], pairs[0][1], nil
 }
 
+// ErrNoPair is returned, wrapped or not, when no pair can be asked: every
+// pair left is ignored, or has a removed or ignored entry, or leaves out
+// the entries in focus.
+var ErrNoPair = pairing.ErrNoPair
+
 // NextPairs returns k more pairs of entry IDs to compare after pending,
 // the pairs already lined up to be asked, in order (see pairing.Queue).
-// Like NextPair, it honors focus mode and leaves out removed entries; the
-// pending pairs must be between entries of the list.
+// Like NextPair, it honors focus mode and leaves out removed and ignored
+// entries and ignored pairs; the pending pairs must be between entries of
+// the list.
 func (l *List) NextPairs(pending [][2]int, k int, rng *rand.Rand) ([][2]int, error) {
 	fit, err := l.Fit()
 	if err != nil {
@@ -166,9 +177,12 @@ func (l *List) NextPairs(pending [][2]int, k int, rng *rand.Rand) ([][2]int, err
 		opts.Focus = append(opts.Focus, fit.index[id])
 	}
 	for i, e := range l.Entries {
-		if e.Removed {
+		if e.Removed || l.EntryIgnored(e.ID) {
 			opts.Hidden = append(opts.Hidden, i)
 		}
+	}
+	for _, p := range l.IgnoredPairs {
+		opts.Skip = append(opts.Skip, [2]int{fit.index[p[0]], fit.index[p[1]]})
 	}
 	queued := make([][2]int, len(pending))
 	for k, p := range pending {

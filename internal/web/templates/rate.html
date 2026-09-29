@@ -1,9 +1,4 @@
 {{define "content"}}
-{{if not .Ready}}
-<h1>Rate</h1>
-<p>Add at least two entries to start comparing.</p>
-<p><a class="button primary" href="{{.List.URL}}/entries">Add entries</a></p>
-{{else}}
 {{if .Focus}}
 <div class="note focus-banner">
   <span>Focus mode: every pair includes {{join .Focus}}.</span>
@@ -14,6 +9,18 @@
   </form>
 </div>
 {{end}}
+{{if .NothingLeft}}
+<h1>Rate</h1>
+<p>Every pair left to ask is ignored{{if .Focus}}, among the pairs focus mode allows{{end}}. Reset ignores to ask about them all again{{if .Undo}}, or undo the last one{{end}}.</p>
+<form method="post" action="{{.List.URL}}/ignores/reset">
+  <input type="hidden" name="from" value="rate">
+  <button class="primary">Reset ignores</button>
+</form>
+{{else if not .Ready}}
+<h1>Rate</h1>
+<p>Add at least two entries to start comparing.</p>
+<p><a class="button primary" href="{{.List.URL}}/entries">Add entries</a></p>
+{{else}}
 <form method="post" action="{{.List.URL}}/answer" class="rate">
   <input type="hidden" name="a" value="{{.First.ID}}">
   <input type="hidden" name="b" value="{{.Second.ID}}">
@@ -39,6 +46,14 @@
       <span class="choice-name">{{.Second.Name}}</span>
       <span class="key"><kbd>→</kbd> or <kbd>3</kbd></span>
     </button>
+    <div class="ignores">
+      <button class="subtle" formaction="{{.List.URL}}/ignore" name="ignore" value="a" data-keys="4"
+        title="Don't ask about {{.First.Name}} until you reset ignores">Ignore {{.First.Name}} <kbd>4</kbd></button>
+      <button class="subtle" formaction="{{.List.URL}}/ignore" name="ignore" value="pair" data-keys="5"
+        title="Don't ask about this pair until you reset ignores">Ignore this pair <kbd>5</kbd></button>
+      <button class="subtle" formaction="{{.List.URL}}/ignore" name="ignore" value="b" data-keys="6"
+        title="Don't ask about {{.Second.Name}} until you reset ignores">Ignore {{.Second.Name}} <kbd>6</kbd></button>
+    </div>
   </div>
 </form>
 {{end}}

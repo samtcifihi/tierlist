@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"math/rand/v2"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -260,9 +262,77 @@ func TestCountsAndLevels(t *testing.T) {
 	if _, ready, _ := l.Levels(); ready {
 		t.Error("a new entry with no answers should hold the readout back")
 	}
+	// Neither does an ignored one, which may be unknown to the user.
+	l.IgnoreEntry(4)
+	if _, ready, _ := l.Levels(); !ready {
+		t.Error("an ignored entry should not hold the readout back")
+	}
+	l.UnignoreEntry(4)
 	l.RemoveEntry(4)
 	if _, ready, _ := l.Levels(); !ready {
 		t.Error("a removed entry should not hold the readout back")
+	}
+}
+
+func TestIgnores(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C", "D")
+	if err := l.IgnoreEntry(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.IgnorePair(3, 2); err != nil {
+		t.Fatal(err)
+	}
+	l.IgnorePair(2, 3) // the same pair the other way round
+	l.IgnoreEntry(1)
+	if l.IgnoreEntry(9) == nil || l.IgnorePair(2, 2) == nil || l.IgnorePair(2, 9) == nil {
+		t.Error("ignoring a missing entry or a pair of one entry: want errors")
+	}
+	if !slices.Equal(l.IgnoredEntries, []int{1}) || !slices.Equal(l.IgnoredPairs, [][2]int{{3, 2}}) {
+		t.Errorf("ignored entries %v, pairs %v", l.IgnoredEntries, l.IgnoredPairs)
+	}
+	for _, c := range []struct {
+		a, b int
+		ok   bool
+	}{{1, 2, false}, {2, 3, false}, {3, 2, false}, {2, 4, true}, {4, 3, true}, {4, 4, false}, {4, 9, false}} {
+		if got := l.CanAsk(c.a, c.b); got != c.ok {
+			t.Errorf("CanAsk(%d, %d) = %v", c.a, c.b, got)
+		}
+	}
+	// Only 2–4 and 3–4 are left to ask.
+	rng := rand.New(rand.NewPCG(5, 5))
+	pairs, err := l.NextPairs(nil, 6, rng)
+	for _, p := range pairs {
+		if !l.CanAsk(p[0], p[1]) {
+			t.Errorf("asked about ignored %v", p)
+		}
+	}
+	if err != nil || len(pairs) != 6 {
+		t.Errorf("NextPairs: %v, %v", pairs, err)
+	}
+	l.IgnoreEntry(4)
+	if _, err := l.NextPairs(nil, 1, rng); !errors.Is(err, ErrNoPair) {
+		t.Errorf("with nothing left to ask: %v, want ErrNoPair", err)
+	}
+
+	// Ignores are saved, kept by Reset, and taken back one by one or all at
+	// once.
+	path := filepath.Join(t.TempDir(), "letters.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	l2, err := Load(path)
+	if err != nil || !slices.Equal(l2.IgnoredEntries, []int{1, 4}) || !slices.Equal(l2.IgnoredPairs, [][2]int{{3, 2}}) {
+		t.Errorf("loaded ignores %v, %v (%v)", l2.IgnoredEntries, l2.IgnoredPairs, err)
+	}
+	l.Reset()
+	l.UnignoreEntry(4)
+	l.UnignorePair(2, 3)
+	if !slices.Equal(l.IgnoredEntries, []int{1}) || len(l.IgnoredPairs) != 0 || !l.CanAsk(2, 3) || l.CanAsk(1, 2) {
+		t.Errorf("after undoing two ignores: %v, %v", l.IgnoredEntries, l.IgnoredPairs)
+	}
+	l.ResetIgnores()
+	if len(l.IgnoredEntries) != 0 || !l.CanAsk(1, 2) {
+		t.Errorf("after ResetIgnores: %v", l.IgnoredEntries)
 	}
 }
 
@@ -323,6 +393,10 @@ func TestTiers(t *testing.T) {
 	l := mustNew(t, "Films", "Alien", "Brazil", "Casablanca")
 	mustRecord(t, l, 1, 2, FirstBetter)
 	mustRecord(t, l, 2, 3, FirstBetter)
+	if d := DefaultDisplay(); !reflect.DeepEqual(d.Template, Template{Kind: "stars", MaxStars: 10}) {
+		t.Errorf("a new list's template is %+v, want 0–10 stars", d.Template)
+	}
+	l.Display.Template.MaxStars = 5
 	rows, err := l.Tiers()
 	if err != nil {
 		t.Fatal(err)
@@ -357,6 +431,7 @@ func TestTiers(t *testing.T) {
 // higher tier.
 func TestTiedEntriesStayTogether(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B", "C", "D", "E")
+	l.Display.Template.MaxStars = 5
 	mustRecord(t, l, 2, 1, FirstBetter)
 	mustRecord(t, l, 3, 1, FirstBetter)
 	mustRecord(t, l, 4, 1, AboutSame)

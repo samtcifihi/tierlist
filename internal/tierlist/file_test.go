@@ -18,6 +18,8 @@ func TestFileFormat(t *testing.T) {
 	l.AddEntry("Casablanca")
 	l.RemoveEntry(3)
 	l.SetFocus([]int{2})
+	l.IgnoreEntry(1)
+	l.IgnorePair(2, 1)
 	got, err := l.encode()
 	if err != nil {
 		t.Fatal(err)
@@ -36,10 +38,12 @@ func TestFileFormat(t *testing.T) {
     {"a":2,"b":1,"answer":"same"}
   ],
   "focus": [2],
+  "ignoredEntries": [1],
+  "ignoredPairs": [[2,1]],
   "display": {
     "template": {
       "kind": "stars",
-      "maxStars": 5
+      "maxStars": 10
     },
     "convention": "top-closed",
     "drawMargin": 0,
@@ -177,6 +181,8 @@ func TestLoadRejects(t *testing.T) {
 		{"focus on a missing entry", `"display"`, `"focus":[5],"display"`, "focus: entry 5"},
 		{"focus on a removed entry", `{"id":2,"name":"B"}],`, `{"id":2,"name":"B","removed":true}],"focus":[2],`, "focus: entry 2"},
 		{"negative draw setting", `"display"`, `"drawElo":-1,"display"`, "draw setting"},
+		{"ignoring a missing entry", `"display"`, `"ignoredEntries":[7],"display"`, "ignored: there is no entry 7"},
+		{"ignoring a pair of one entry", `"display"`, `"ignoredPairs":[[1,1]],"display"`, "ignored pair: entry 1 is compared with itself"},
 		{"bad template", `"maxStars":5`, `"maxStars":2`, "display:"},
 		{"bad convention", `"top-closed"`, `"sideways"`, "display:"},
 		{"bad group rule", `"middle-entry"`, `"widest"`, "display:"},

@@ -18,7 +18,7 @@
       <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
     </form>
     <span class="rating" title="Rating in points (an entry not yet compared has 1500), and its uncertainty">{{.Rating}} <span class="muted">{{.SD}}</span></span>
-    <a class="muted small" href="{{$.List.URL}}/answers?entry={{.ID}}">{{plural .Answers "answer" "answers"}}</a>
+    <span class="muted small"><a class="muted" href="{{$.List.URL}}/answers?entry={{.ID}}">{{plural .Answers "answer" "answers"}}</a>{{if .Ignored}} · ignored{{end}}</span>
     <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/remove">
       <button class="subtle">Remove</button>
     </form>
@@ -29,6 +29,12 @@
   <button form="focus" name="do" value="set">Focus on ticked</button>
   {{if .Focus}}<button form="focus" name="do" value="clear">Leave focus mode</button>{{end}}
 </div>
+{{with .Ignoring}}
+<form method="post" action="{{$.List.URL}}/ignores/reset" class="inline ignoring">
+  <span class="muted small">{{.}} They aren't asked about until you reset ignores.</span>
+  <button>Reset ignores</button>
+</form>
+{{end}}
 {{end}}
 
 {{if .Removed}}
@@ -38,7 +44,7 @@
   {{range .Removed}}
   <li>
     <span>{{.Name}}</span>
-    <a class="muted small" href="{{$.List.URL}}/answers?entry={{.ID}}">{{plural .Answers "answer" "answers"}}</a>
+    <span class="muted small"><a class="muted" href="{{$.List.URL}}/answers?entry={{.ID}}">{{plural .Answers "answer" "answers"}}</a>{{if .Ignored}} · ignored{{end}}</span>
     <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/restore">
       <button class="subtle">Restore</button>
     </form>

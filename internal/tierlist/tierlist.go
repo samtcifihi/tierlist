@@ -51,8 +51,13 @@ type List struct {
 	Comparisons []Comparison `json:"comparisons"`
 	// Focus holds the IDs of the entries in focus mode; empty means the
 	// default mode. It is saved, so focus mode lasts across sessions.
-	Focus   []int   `json:"focus,omitempty"`
-	Display Display `json:"display"`
+	Focus []int `json:"focus,omitempty"`
+	// IgnoredEntries and IgnoredPairs, by ID, are left out of the pairs
+	// asked until the ignores are reset. Their answers still count, and
+	// ignored entries stay in the tier list.
+	IgnoredEntries []int    `json:"ignoredEntries,omitempty"`
+	IgnoredPairs   [][2]int `json:"ignoredPairs,omitempty"`
+	Display        Display  `json:"display"`
 	// DrawElo is the draw setting from the last fit, in Elo. It is saved
 	// only to speed up the next fit.
 	DrawElo float64 `json:"drawElo,omitempty"`
@@ -175,7 +180,8 @@ func (l *List) Undo() (Comparison, bool) {
 }
 
 // Reset deletes every answer, so that rating starts over, keeping the
-// entries (removed ones stay removed), focus mode and display options.
+// entries (removed ones stay removed), ignores, focus mode and display
+// options.
 func (l *List) Reset() {
 	l.Comparisons = []Comparison{}
 	for i := range l.Entries {
@@ -216,6 +222,67 @@ func (l *List) SetFocus(ids []int) error {
 	return nil
 }
 
+// IgnoreEntry leaves the entry with ID id out of the pairs asked until
+// ResetIgnores.
+func (l *List) IgnoreEntry(id int) error {
+	if _, err := l.entry(id); err != nil {
+		return err
+	}
+	if !l.EntryIgnored(id) {
+		l.IgnoredEntries = append(l.IgnoredEntries, id)
+	}
+	return nil
+}
+
+// IgnorePair leaves the pair of entries a and b, either way round, out of
+// the pairs asked until ResetIgnores.
+func (l *List) IgnorePair(a, b int) error {
+	if err := checkPair(a, b, l.ids()); err != nil {
+		return err
+	}
+	if !l.PairIgnored(a, b) {
+		l.IgnoredPairs = append(l.IgnoredPairs, [2]int{a, b})
+	}
+	return nil
+}
+
+// UnignoreEntry takes back IgnoreEntry(id).
+func (l *List) UnignoreEntry(id int) {
+	l.IgnoredEntries = slices.DeleteFunc(l.IgnoredEntries, func(x int) bool { return x == id })
+}
+
+// UnignorePair takes back IgnorePair(a, b), given either way round.
+func (l *List) UnignorePair(a, b int) {
+	l.IgnoredPairs = slices.DeleteFunc(l.IgnoredPairs, func(p [2]int) bool { return samePair(p, a, b) })
+}
+
+// ResetIgnores lets every entry and pair be asked about again.
+func (l *List) ResetIgnores() {
+	l.IgnoredEntries, l.IgnoredPairs = nil, nil
+}
+
+// EntryIgnored reports whether the entry with ID id is ignored.
+func (l *List) EntryIgnored(id int) bool { return slices.Contains(l.IgnoredEntries, id) }
+
+// PairIgnored reports whether the pair of entries a and b, either way
+// round, is ignored as a pair.
+func (l *List) PairIgnored(a, b int) bool {
+	return slices.ContainsFunc(l.IgnoredPairs, func(p [2]int) bool { return samePair(p, a, b) })
+}
+
+// CanAsk reports whether entries a and b can be asked about now: they are
+// different entries of the list, neither is removed or ignored, the pair
+// isn't ignored, and in focus mode one of them is in focus.
+func (l *List) CanAsk(a, b int) bool {
+	ea, errA := l.entry(a)
+	eb, errB := l.entry(b)
+	return errA == nil && errB == nil && a != b && !ea.Removed && !eb.Removed &&
+		!l.EntryIgnored(a) && !l.EntryIgnored(b) && !l.PairIgnored(a, b) &&
+		(len(l.Focus) == 0 || slices.Contains(l.Focus, a) || slices.Contains(l.Focus, b))
+}
+
+func samePair(p [2]int, a, b int) bool { return p == [2]int{a, b} || p == [2]int{b, a} }
+
 // entry returns the entry with ID id.
 func (l *List) entry(id int) (*Entry, error) {
 	for i := range l.Entries {
@@ -236,15 +303,24 @@ func (l *List) ids() map[int]bool {
 }
 
 func checkComparison(c Comparison, known map[int]bool) error {
-	switch {
-	case !known[c.A]:
-		return fmt.Errorf("there is no entry %d", c.A)
-	case !known[c.B]:
-		return fmt.Errorf("there is no entry %d", c.B)
-	case c.A == c.B:
-		return fmt.Errorf("entry %d is compared with itself", c.A)
-	case c.Answer != FirstBetter && c.Answer != SecondBetter && c.Answer != AboutSame:
+	if err := checkPair(c.A, c.B, known); err != nil {
+		return err
+	}
+	if c.Answer != FirstBetter && c.Answer != SecondBetter && c.Answer != AboutSame {
 		return fmt.Errorf("unknown answer %q", c.Answer)
+	}
+	return nil
+}
+
+// checkPair checks that a and b are two different known entries.
+func checkPair(a, b int, known map[int]bool) error {
+	switch {
+	case !known[a]:
+		return fmt.Errorf("there is no entry %d", a)
+	case !known[b]:
+		return fmt.Errorf("there is no entry %d", b)
+	case a == b:
+		return fmt.Errorf("entry %d is compared with itself", a)
 	}
 	return nil
 }
@@ -279,6 +355,16 @@ func (l *List) validate() error {
 			return fmt.Errorf("focus: entry %d is missing, removed or listed twice", id)
 		}
 		seen[id] = true
+	}
+	for _, id := range l.IgnoredEntries {
+		if !known[id] {
+			return fmt.Errorf("ignored: there is no entry %d", id)
+		}
+	}
+	for _, p := range l.IgnoredPairs {
+		if err := checkPair(p[0], p[1], known); err != nil {
+			return fmt.Errorf("ignored pair: %w", err)
+		}
 	}
 	if !(l.DrawElo >= 0) || math.IsInf(l.DrawElo, 1) {
 		return fmt.Errorf("draw setting %v", l.DrawElo)

@@ -136,7 +136,7 @@ func (s *Server) resetList(w http.ResponseWriter, r *http.Request, ol *openList)
 	if !s.saved(w, ol) {
 		return
 	}
-	ol.queue = nil
+	ol.queue, ol.done = nil, nil
 	back(w, r, listURL(ol.key)+"/entries",
 		fmt.Sprintf("Reset the list, deleting %s. Every entry starts again at 1500.", plural(n, "answer", "answers")), "")
 }
@@ -154,28 +154,44 @@ func (s *Server) saved(w http.ResponseWriter, ol *openList) bool {
 type rateView struct {
 	view
 	Ready         bool
+	NothingLeft   bool // every pair that could be asked is ignored
 	First, Second tierlist.Entry
 	Upcoming      []upcomingPair // the pairs coming up, the last one next
-	Token         int            // the number of answers the page was made with
-	Undo          string         // the answer Undo would take back
+	Token         int            // see token
+	Undo          string         // the answer or ignore Undo would take back
 	Answers       int
 	Draw          string // the draw setting, as a percentage
 	Levels        string
 	Focus         []string // names of the entries in focus mode
 }
 
+// token counts the answers and ignores in the list. A form from the rating
+// page carries the count the page was made with, so that a double click, or
+// a form sent again with the Back button, is noticed and dropped.
+func token(l *tierlist.List) int {
+	return len(l.Comparisons) + len(l.IgnoredEntries) + len(l.IgnoredPairs)
+}
+
 func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
 	names := entryNames(l)
-	v := rateView{view: s.view(r, "rate", ol), Answers: len(l.Comparisons), Token: len(l.Comparisons)}
+	v := rateView{view: s.view(r, "rate", ol), Answers: len(l.Comparisons), Token: token(l)}
 	for _, id := range l.Focus {
 		v.Focus = append(v.Focus, names[id])
 	}
-	if k := len(l.Comparisons); k > 0 {
+	if d, ok := lastIgnore(ol); ok {
+		v.Undo = describeIgnore(d, names)
+	} else if k := len(l.Comparisons); k > 0 {
 		v.Undo = describe(l.Comparisons[k-1], names)
 	}
 	if len(l.Shown()) >= 2 {
-		if err := s.fillQueue(ol); err != nil {
+		err := s.fillQueue(ol)
+		if errors.Is(err, tierlist.ErrNoPair) {
+			v.NothingLeft = true
+			s.render(w, http.StatusOK, "rate", v)
+			return
+		}
+		if err != nil {
 			s.message(w, http.StatusInternalServerError, "No pair to compare", err.Error())
 			return
 		}
@@ -205,7 +221,7 @@ type upcomingPair struct{ First, Second string }
 func (s *Server) fillQueue(ol *openList) error {
 	var q [][2]int
 	for _, p := range ol.queue {
-		if pairShowable(ol.list, p) {
+		if ol.list.CanAsk(p[0], p[1]) {
 			q = append(q, p)
 		}
 	}
@@ -220,33 +236,25 @@ func (s *Server) fillQueue(ol *openList) error {
 	return nil
 }
 
-// pairShowable reports whether the rating page can keep showing pair: two
-// different entries that are not removed, including a focused one in focus
-// mode.
-func pairShowable(l *tierlist.List, pair [2]int) bool {
-	shown := make(map[int]bool)
-	for _, e := range l.Shown() {
-		shown[e.ID] = true
-	}
-	a, b := pair[0], pair[1]
-	return shown[a] && shown[b] && a != b &&
-		(len(l.Focus) == 0 || slices.Contains(l.Focus, a) || slices.Contains(l.Focus, b))
+// pairForm reads the pair a rating page form was about, and the token it
+// was made with.
+func pairForm(r *http.Request) (a, b, n int, ok bool) {
+	n, errN := strconv.Atoi(r.FormValue("n"))
+	a, errA := strconv.Atoi(r.FormValue("a"))
+	b, errB := strconv.Atoi(r.FormValue("b"))
+	return a, b, n, errN == nil && errA == nil && errB == nil
 }
 
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
 	rate := listURL(ol.key) + "/rate"
-	n, errN := strconv.Atoi(r.FormValue("n"))
-	a, errA := strconv.Atoi(r.FormValue("a"))
-	b, errB := strconv.Atoi(r.FormValue("b"))
-	if errN != nil || errA != nil || errB != nil {
+	a, b, n, ok := pairForm(r)
+	if !ok {
 		http.Error(w, "incomplete answer", http.StatusBadRequest)
 		return
 	}
-	// An answer from a page made before the latest answer (a double click,
-	// or the Back button) is dropped rather than recorded twice.
-	if n != len(l.Comparisons) {
-		back(w, r, rate, "That answer came from an out-of-date page, so it was ignored.", "")
+	if n != token(l) {
+		back(w, r, rate, "That answer came from an out-of-date page, so it wasn't recorded.", "")
 		return
 	}
 	if err := l.Record(a, b, tierlist.Answer(r.FormValue("answer"))); err != nil {
@@ -256,33 +264,126 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, ol *openList) {
 	if !s.saved(w, ol) {
 		return
 	}
-	if len(ol.queue) > 0 && ol.queue[0] == [2]int{a, b} {
-		ol.queue = ol.queue[1:]
-	}
+	ol.done = append(ol.done, done{a: a, b: b})
+	ol.asked(a, b)
 	back(w, r, rate, "", "")
+}
+
+// ignore sets aside the pair shown, or one of its entries, until the
+// ignores are reset.
+func (s *Server) ignore(w http.ResponseWriter, r *http.Request, ol *openList) {
+	l := ol.list
+	rate := listURL(ol.key) + "/rate"
+	a, b, n, ok := pairForm(r)
+	what := r.FormValue("ignore")
+	if !ok || (what != "a" && what != "b" && what != "pair") {
+		http.Error(w, "incomplete request to ignore", http.StatusBadRequest)
+		return
+	}
+	if n != token(l) {
+		back(w, r, rate, "That came from an out-of-date page, so nothing changed.", "")
+		return
+	}
+	if !l.CanAsk(a, b) {
+		back(w, r, rate, "", "that pair can't be asked about now")
+		return
+	}
+	d := done{ignore: what, a: a, b: b}
+	switch what {
+	case "a":
+		l.IgnoreEntry(a)
+	case "b":
+		l.IgnoreEntry(b)
+	default:
+		l.IgnorePair(a, b)
+	}
+	if !s.saved(w, ol) {
+		return
+	}
+	ol.done = append(ol.done, d)
+	ol.asked(a, b)
+	back(w, r, rate, "Not asking about "+ignored(d, entryNames(l))+" until you reset ignores on the Entries page.", "")
 }
 
 func (s *Server) undo(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
 	rate := listURL(ol.key) + "/rate"
-	if n, err := strconv.Atoi(r.FormValue("n")); err != nil || n != len(l.Comparisons) {
-		back(w, r, rate, "That undo came from an out-of-date page, so it was ignored.", "")
+	if n, err := strconv.Atoi(r.FormValue("n")); err != nil || n != token(l) {
+		back(w, r, rate, "That undo came from an out-of-date page, so nothing was undone.", "")
 		return
 	}
 	names := entryNames(l)
-	c, ok := l.Undo()
-	if !ok {
-		back(w, r, rate, "", "")
-		return
+	var a, b int
+	var msg string
+	if d, ok := lastIgnore(ol); ok {
+		switch d.ignore {
+		case "a":
+			l.UnignoreEntry(d.a)
+		case "b":
+			l.UnignoreEntry(d.b)
+		default:
+			l.UnignorePair(d.a, d.b)
+		}
+		a, b, msg = d.a, d.b, "Took back "+describeIgnore(d, names)+". Answer it now."
+	} else {
+		c, ok := l.Undo()
+		if !ok {
+			back(w, r, rate, "", "")
+			return
+		}
+		a, b, msg = c.A, c.B, "Took back "+describe(c, names)+". Answer it again."
 	}
 	if !s.saved(w, ol) {
 		return
 	}
+	if k := len(ol.done); k > 0 {
+		ol.done = ol.done[:k-1]
+	}
 	// Ask the same question again, the same way round, before the ones
 	// that were coming up.
-	ol.queue = append([][2]int{{c.A, c.B}}, ol.queue...)
+	ol.queue = append([][2]int{{a, b}}, ol.queue...)
 	ol.queue = ol.queue[:min(len(ol.queue), 1+upcoming)]
-	back(w, r, rate, "Took back "+describe(c, names)+". Answer it again.", "")
+	back(w, r, rate, msg, "")
+}
+
+// lastIgnore returns the latest thing the rating page did, if that was an
+// ignore that Undo would take back.
+func lastIgnore(ol *openList) (done, bool) {
+	if k := len(ol.done); k > 0 && ol.done[k-1].ignore != "" {
+		return ol.done[k-1], true
+	}
+	return done{}, false
+}
+
+// ignored names what an ignore set aside.
+func ignored(d done, names map[int]string) string {
+	switch d.ignore {
+	case "a":
+		return names[d.a]
+	case "b":
+		return names[d.b]
+	}
+	return names[d.a] + " vs " + names[d.b]
+}
+
+// describeIgnore puts an ignore into words for Undo.
+func describeIgnore(d done, names map[int]string) string {
+	return "ignoring " + ignored(d, names)
+}
+
+func (s *Server) resetIgnores(w http.ResponseWriter, r *http.Request, ol *openList) {
+	from := listURL(ol.key) + "/entries"
+	if r.FormValue("from") == "rate" {
+		from = listURL(ol.key) + "/rate"
+	}
+	ol.list.ResetIgnores()
+	if !s.saved(w, ol) {
+		return
+	}
+	// The ignores are gone, so Undo can no longer take them back.
+	ol.done = slices.DeleteFunc(ol.done, func(d done) bool { return d.ignore != "" })
+	ol.replan()
+	back(w, r, from, "Every entry and pair can be asked about again.", "")
 }
 
 // describe puts an answer into words.
@@ -315,12 +416,13 @@ func levelsText(l *tierlist.List) string {
 
 type entriesView struct {
 	view
-	Shown   []entryRow
-	Removed []entryRow
-	Focus   bool
-	Answers int
-	Reset   confirm
-	Delete  confirm
+	Shown    []entryRow
+	Removed  []entryRow
+	Focus    bool
+	Ignoring string // what is ignored, in words, or ""
+	Answers  int
+	Reset    confirm
+	Delete   confirm
 }
 
 type entryRow struct {
@@ -330,6 +432,7 @@ type entryRow struct {
 	SD      string
 	Answers int
 	Focused bool
+	Ignored bool
 }
 
 func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
@@ -347,7 +450,7 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 		Delete: deleteDialog("delete-list", listURL(ol.key), l.Name, len(l.Shown()), len(l.Comparisons))}
 	for _, e := range l.Entries {
 		row := entryRow{
-			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID),
+			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID), Ignored: l.EntryIgnored(e.ID),
 			Rating: fmt.Sprintf("%.0f", fit.Points(e.ID)), SD: fmt.Sprintf("± %.0f", fit.PointsSD(e.ID)),
 		}
 		if e.Removed {
@@ -357,7 +460,28 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 		}
 	}
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
+	v.Ignoring = ignoring(l)
 	s.render(w, http.StatusOK, "entries", v)
+}
+
+// ignoring says what the list ignores, as in "Ignoring Alien and Brazil,
+// plus 2 pairs.", or returns "" if nothing is ignored.
+func ignoring(l *tierlist.List) string {
+	names := entryNames(l)
+	var ignored []string
+	for _, id := range l.IgnoredEntries {
+		ignored = append(ignored, names[id])
+	}
+	pairs := plural(len(l.IgnoredPairs), "pair", "pairs")
+	switch {
+	case len(ignored) > 0 && len(l.IgnoredPairs) > 0:
+		return "Ignoring " + list(ignored, "and") + ", plus " + pairs + "."
+	case len(ignored) > 0:
+		return "Ignoring " + list(ignored, "and") + "."
+	case len(l.IgnoredPairs) > 0:
+		return "Ignoring " + pairs + "."
+	}
+	return ""
 }
 
 func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList) {
@@ -523,7 +647,7 @@ type displayForm struct {
 
 func formFor(d tierlist.Display) displayForm {
 	f := displayForm{
-		Kind: d.Template.Kind, MaxStars: "5", Divisions: "1", CustomName: "Custom",
+		Kind: d.Template.Kind, MaxStars: "10", Divisions: "1", CustomName: "Custom",
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
 		GroupRule: d.GroupRule, Prefer: d.Prefer,
 	}

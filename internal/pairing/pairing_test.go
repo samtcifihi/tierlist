@@ -1,6 +1,7 @@
 package pairing
 
 import (
+	"errors"
 	"math/rand/v2"
 	"testing"
 
@@ -77,10 +78,30 @@ func TestNextRejects(t *testing.T) {
 			t.Errorf("history %v: want an error", h)
 		}
 	}
-	for _, opts := range []Options{{Focus: []int{3}}, {Hidden: []int{-1}}, {Hidden: []int{0, 1}}, {Focus: []int{2}, Hidden: []int{2}}} {
+	for _, opts := range []Options{{Focus: []int{3}}, {Hidden: []int{-1}}, {Hidden: []int{0, 1}}, {Focus: []int{2}, Hidden: []int{2}},
+		{Skip: [][2]int{{0, 3}}}, {Skip: [][2]int{{0, 1}, {1, 2}, {2, 0}}}} {
 		if _, _, err := Next(res, nil, opts, rng); err == nil {
 			t.Errorf("%+v: want an error", opts)
 		}
+	}
+}
+
+func TestSkip(t *testing.T) {
+	res := fit(t, 3, nil)
+	// With 0–1 and 0–2 skipped, 1–2 is all that is left, even straight
+	// after it was asked.
+	opts := Options{Skip: [][2]int{{1, 0}, {0, 2}}}
+	for _, h := range [][]bayeselo.Comparison{nil, {cmp(2, 1)}} {
+		for s := range 5 {
+			if p := next(t, res, h, opts, rand.New(rand.NewPCG(uint64(s), 2))); key(p[0], p[1]) != [2]int{1, 2} {
+				t.Errorf("history %v: picked %v", h, p)
+			}
+		}
+	}
+	// With every pair skipped, there is nothing to ask.
+	opts.Skip = append(opts.Skip, [2]int{2, 1})
+	if _, _, err := Next(res, nil, opts, rand.New(rand.NewPCG(1, 2))); !errors.Is(err, ErrNoPair) {
+		t.Errorf("every pair skipped: error %v, want ErrNoPair", err)
 	}
 }
 

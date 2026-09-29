@@ -127,6 +127,8 @@ func (l *List) encode() ([]byte, error) {
 		{key: "entries", value: l.Entries, lines: true},
 		{key: "comparisons", value: l.Comparisons, lines: true},
 		{key: "focus", value: l.Focus, skip: len(l.Focus) == 0},
+		{key: "ignoredEntries", value: l.IgnoredEntries, skip: len(l.IgnoredEntries) == 0},
+		{key: "ignoredPairs", value: l.IgnoredPairs, skip: len(l.IgnoredPairs) == 0},
 		{key: "display", value: l.Display},
 		{key: "drawElo", value: l.DrawElo, skip: l.DrawElo == 0},
 	} {
@@ -140,7 +142,7 @@ func (l *List) encode() ([]byte, error) {
 			data, err = lines(v)
 		case []Comparison:
 			data, err = lines(v)
-		case []int:
+		case []int, [][2]int:
 			data, err = marshal(v, false)
 		default:
 			data, err = marshal(v, true)

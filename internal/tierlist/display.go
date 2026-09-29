@@ -46,12 +46,12 @@ type Template struct {
 	Cutoffs []string `json:"cutoffs,omitempty"`
 }
 
-// DefaultDisplay returns the display options of a new list: 0–5 stars with
+// DefaultDisplay returns the display options of a new list: 0–10 stars with
 // the top tier closed, a draw-margin of 0, the middle-entry rule, and the
 // higher tier when a group's middle entries fall in different tiers.
 func DefaultDisplay() Display {
 	return Display{
-		Template:   Template{Kind: "stars", MaxStars: 5},
+		Template:   Template{Kind: "stars", MaxStars: 10},
 		Convention: "top-closed",
 		GroupRule:  "middle-entry",
 		Prefer:     "higher",

@@ -32,7 +32,13 @@ type Options struct {
 	// Hidden entries are never picked, though their comparisons still
 	// count.
 	Hidden []int
+	// Skip holds pairs of entries never to pick, either way round, though
+	// their comparisons still count.
+	Skip [][2]int
 }
+
+// ErrNoPair is returned when no pair of entries can be picked.
+var ErrNoPair = errors.New("pairing: there is no pair of entries to compare")
 
 // Next returns the next two entries to compare, in the order to show them.
 // res is the Bayes Elo fit of history, the comparisons so far in the order
@@ -66,8 +72,15 @@ func Next(res *bayeselo.Result, history []bayeselo.Comparison, opts Options, rng
 			focused[i] = true
 		}
 	}
+	skip := make(map[[2]int]bool, len(opts.Skip))
+	for _, p := range opts.Skip {
+		if p[0] < 0 || p[0] >= n || p[1] < 0 || p[1] >= n {
+			return 0, 0, fmt.Errorf("pairing: cannot skip the pair of entries %d and %d, outside 0 to %d", p[0], p[1], n-1)
+		}
+		skip[key(p[0], p[1])] = true
+	}
 	candidate := func(i, j int) bool {
-		return !hidden[i] && !hidden[j] && (focused == nil || focused[i] || focused[j])
+		return !hidden[i] && !hidden[j] && !skip[key(i, j)] && (focused == nil || focused[i] || focused[j])
 	}
 	last := [2]int{-1, -1}
 	if len(history) > 0 {
@@ -97,7 +110,7 @@ func Next(res *bayeselo.Result, history []bayeselo.Comparison, opts Options, rng
 		}
 	}
 	if ties == 0 && (last[0] < 0 || !candidate(last[0], last[1])) {
-		return 0, 0, errors.New("pairing: there is no pair of entries to compare")
+		return 0, 0, ErrNoPair
 	}
 	if rng.IntN(2) == 0 {
 		return pick[0], pick[1], nil

@@ -291,8 +291,8 @@ func TestTierListPage(t *testing.T) {
 	c.answer(base, 2, 3, 1, "a")
 	status, body := c.get(base + "/tiers")
 	if status != http.StatusOK || !strings.Contains(body, `<div class="tier" style="--hue: 250">
-      <div class="tier-label">5★</div>`) ||
-		!strings.Contains(body, "5★: Alien\n4★:\n3★: Brazil\n2★:\n1★:\n0★: Casablanca") {
+      <div class="tier-label">10★</div>`) ||
+		!strings.Contains(body, "10★: Alien\n9★:\n8★:\n7★:\n6★:\n5★: Brazil\n4★:\n3★:\n2★:\n1★:\n0★: Casablanca") {
 		t.Fatalf("tier list page: %d\n%s", status, body)
 	}
 	fit, err := c.load("films").Fit()
@@ -314,7 +314,9 @@ func TestTierListPage(t *testing.T) {
 	if status, _ := display("hogwarts", nil); status != http.StatusSeeOther {
 		t.Errorf("choosing Hogwarts: %d", status)
 	}
-	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding: Alien") {
+	// Switching back to stars from here starts at 10 stars.
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding: Alien") ||
+		!strings.Contains(body, `name="maxStars" min="3" value="10"`) {
 		t.Errorf("Hogwarts tier list:\n%s", body)
 	}
 	status, _ = display("custom", url.Values{"customName": {"Halves"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"1/2"}})
@@ -763,5 +765,92 @@ func TestResetPlansAfresh(t *testing.T) {
 	if len(seen) != 6 {
 		t.Errorf("after reset, asked %s vs %s with %v coming up; want the first three pairs to cover all six entries",
 			letter(a), letter(b), up)
+	}
+}
+
+func TestIgnoring(t *testing.T) {
+	s, c := start(t, t.TempDir())
+	s.rng = rand.New(rand.NewPCG(3, 3))
+	base := c.newList("Letters", "A", "B", "C", "D")
+	letter := func(id int) string { return string(rune('A' + id - 1)) }
+	ignore := func(a, b, n int, what string) string {
+		t.Helper()
+		_, loc := c.post(base+"/ignore", url.Values{"a": {strconv.Itoa(a)}, "b": {strconv.Itoa(b)}, "n": {strconv.Itoa(n)}, "ignore": {what}})
+		return loc
+	}
+	undo := func(n int) { c.post(base+"/undo", url.Values{"n": {strconv.Itoa(n)}}) }
+	same := func(a, b, c, d int) bool { return (a == c && b == d) || (a == d && b == c) }
+
+	a, b, n, body := c.question(base)
+	for _, want := range []string{
+		`formaction="/lists/letters/ignore" name="ignore" value="a" data-keys="4"`,
+		`formaction="/lists/letters/ignore" name="ignore" value="pair" data-keys="5"`,
+		`formaction="/lists/letters/ignore" name="ignore" value="b" data-keys="6"`,
+		"Ignore " + letter(a) + " <kbd>4</kbd>", "Ignore this pair <kbd>5</kbd>", "Ignore " + letter(b) + " <kbd>6</kbd>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rating page lacks %q:\n%s", want, body)
+		}
+	}
+
+	// Ignoring the pair moves on to another pair; Undo asks it again, the
+	// same way round.
+	if loc := ignore(a, b, n, "pair"); !strings.Contains(loc, "msg=Not+asking+about+"+letter(a)+"+vs+"+letter(b)) {
+		t.Errorf("ignoring the pair: %s", loc)
+	}
+	if loc := ignore(a, b, n, "a"); !strings.Contains(loc, "out-of-date") || len(c.load("letters").IgnoredEntries) != 0 {
+		t.Errorf("an ignore from an out-of-date page: %s", loc)
+	}
+	a1, b1, n1, body := c.question(base)
+	if same(a, b, a1, b1) || !strings.Contains(body, "Undo: ignoring "+letter(a)+" vs "+letter(b)) {
+		t.Errorf("after ignoring %d vs %d, asked %d vs %d:\n%s", a, b, a1, b1, body)
+	}
+	undo(n1)
+	if a2, b2, _, _ := c.question(base); a2 != a || b2 != b || len(c.load("letters").IgnoredPairs) != 0 {
+		t.Errorf("after undoing the ignore, asked %d vs %d; want %d vs %d with nothing ignored", a2, b2, a, b)
+	}
+
+	// Undo takes back answers and ignores newest first.
+	c.answer(base, a, b, n, "a")
+	a3, b3, n3, _ := c.question(base)
+	ignore(a3, b3, n3, "b")
+	a4, b4, n4, body := c.question(base)
+	if a4 == b3 || b4 == b3 || !strings.Contains(body, "Undo: ignoring "+letter(b3)) {
+		t.Errorf("after ignoring %s, asked %d vs %d:\n%s", letter(b3), a4, b4, body)
+	}
+	for _, p := range upcomingShown(body) {
+		if p[0] == letter(b3) || p[1] == letter(b3) {
+			t.Errorf("ignored %s is coming up: %v", letter(b3), p)
+		}
+	}
+	undo(n4)
+	a5, b5, n5, body := c.question(base)
+	if a5 != a3 || b5 != b3 || c.load("letters").EntryIgnored(b3) || !strings.Contains(body, "Undo: "+letter(a)+" over "+letter(b)) {
+		t.Errorf("after undoing the ignore: asked %d vs %d, want %d vs %d, with the answer next to undo:\n%s", a5, b5, a3, b3, body)
+	}
+	undo(n5)
+	if l := c.load("letters"); len(l.Comparisons) != 0 {
+		t.Errorf("the second undo left %d answers", len(l.Comparisons))
+	}
+
+	// With every pair ignored there is nothing left to ask, and Reset
+	// ignores brings them all back.
+	for range 3 {
+		a, b, n, _ := c.question(base)
+		ignore(a, b, n, "a")
+	}
+	if _, body := c.get(base + "/rate"); !strings.Contains(body, "Every pair left to ask is ignored") ||
+		!strings.Contains(body, `action="/lists/letters/ignores/reset"`) || !strings.Contains(body, "Undo: ignoring") {
+		t.Errorf("rating page with nothing left to ask:\n%s", body)
+	}
+	_, body = c.get(base + "/entries")
+	if strings.Count(body, " · ignored") != 3 || !strings.Contains(body, "Ignoring ") || !strings.Contains(body, "<button>Reset ignores</button>") {
+		t.Errorf("entries page with three entries ignored:\n%s", body)
+	}
+	if _, loc := c.post(base+"/ignores/reset", url.Values{"from": {"rate"}}); !strings.HasPrefix(loc, base+"/rate?msg=Every+entry") {
+		t.Errorf("resetting ignores: %s", loc)
+	}
+	if _, _, _, body := c.question(base); len(c.load("letters").IgnoredEntries) != 0 || strings.Contains(body, "Undo: ignoring") {
+		t.Errorf("after resetting ignores: %v ignored\n%s", c.load("letters").IgnoredEntries, body)
 	}
 }
