@@ -1,0 +1,49 @@
+{{define "content"}}
+{{if not .Ready}}
+<h1>Rate</h1>
+<p>Add at least two entries to start comparing.</p>
+<p><a class="button primary" href="{{.List.URL}}/entries">Add entries</a></p>
+{{else}}
+{{if .Focus}}
+<div class="note focus-banner">
+  <span>Focus mode: every pair includes {{join .Focus}}.</span>
+  <form method="post" action="{{.List.URL}}/focus">
+    <input type="hidden" name="do" value="clear">
+    <input type="hidden" name="from" value="rate">
+    <button class="subtle">Leave focus mode</button>
+  </form>
+</div>
+{{end}}
+<form method="post" action="{{.List.URL}}/answer" class="rate">
+  <input type="hidden" name="a" value="{{.First.ID}}">
+  <input type="hidden" name="b" value="{{.Second.ID}}">
+  <input type="hidden" name="n" value="{{.Token}}">
+  <h1 class="question">Which is better?</h1>
+  <div class="pair">
+    <button class="choice" name="answer" value="a" data-keys="ArrowLeft 1">
+      <span class="choice-name">{{.First.Name}}</span>
+      <span class="key"><kbd>←</kbd> or <kbd>1</kbd></span>
+    </button>
+    <button class="same" name="answer" value="same" data-keys="ArrowDown ArrowUp 2">
+      About the same
+      <span class="key"><kbd>↓</kbd> or <kbd>2</kbd></span>
+    </button>
+    <button class="choice" name="answer" value="b" data-keys="ArrowRight 3">
+      <span class="choice-name">{{.Second.Name}}</span>
+      <span class="key"><kbd>→</kbd> or <kbd>3</kbd></span>
+    </button>
+  </div>
+</form>
+{{end}}
+<div class="below">
+  {{with .Undo}}
+  <form method="post" action="{{$.List.URL}}/undo">
+    <input type="hidden" name="n" value="{{$.Token}}">
+    <button class="subtle" data-keys="u U Backspace">Undo: {{.}} <kbd>U</kbd></button>
+  </form>
+  {{end}}
+  {{if .Ready}}
+  <p class="muted small">{{.Answers}} answers · draw setting {{.DrawElo}} Elo{{with .Levels}} · {{.}}{{end}}</p>
+  {{end}}
+</div>
+{{end}}

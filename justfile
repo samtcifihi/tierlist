@@ -5,6 +5,14 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 default:
     @just --list
 
+# Run the program; pass flags after, e.g. `just run -no-browser`
+run *flags:
+    go run ./cmd/tierlist {{ flags }}
+
+# Build the program into bin/
+build:
+    go build -o bin/ ./cmd/tierlist
+
 # Run the tests
 test:
     go test ./...

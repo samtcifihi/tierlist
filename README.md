@@ -6,10 +6,21 @@ The user compares entries two at a time. The program stores those results, turns
 
 This project uses [just](https://github.com/casey/just), not make.
 
+## Using it
+
+Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists.
+
+- **Your lists:** the start page lists your saved tier lists and creates new ones.
+- **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating and its uncertainty.
+- **Tier list:** choose the display options and see the tier list, with a plain-text version to copy.
+
+Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
+
 ## Platform
 
 - **Language:** Go.
-- **Interface:** a local web UI. The Go program serves its pages on `127.0.0.1` and opens them in the default browser. Listening only on `127.0.0.1` keeps it off the network and avoids the Windows Firewall prompt.
+- **Interface:** a local web UI. The Go program serves its pages on `127.0.0.1` and opens them in the default browser. Listening only on `127.0.0.1` keeps it off the network and avoids the Windows Firewall prompt. It also turns away requests addressed to any other host name, which defeats DNS rebinding, and changes that come from another website's page.
 - **Packaging:** the HTML, CSS and JavaScript are embedded in the program, so it ships as a single executable.
 - **Frontend:** server-rendered HTML with as little JavaScript as practical. No Node/npm build step.
 - **Target:** Windows first. The code should stay portable; it is also developed and tested on Linux.
@@ -17,6 +28,8 @@ This project uses [just](https://github.com/casey/just), not make.
 ## Entries
 
 Entries are text. Optional pictures for entries would be nice but are not required.
+
+Removing an entry hides it: it leaves the tier list, focus mode and new comparisons, but its answers still count toward the other entries' ratings. (If A beat X and X beat B, that still says A is better than B.) A removed entry can be restored.
 
 ## Rating
 
@@ -37,6 +50,8 @@ The program presents two real entries and the user chooses one of:
 - they are about the same (a draw)
 
 Each answer is a result the Bayes Elo calculation uses. The finished comparison record is stored.
+
+**Undo** takes back the most recent answer and asks that question again. It can be repeated, and works across sessions, since answers are saved in order.
 
 ### Model
 
@@ -72,7 +87,7 @@ The draw setting has a prior of its own: one win, one loss and one draw between 
 
 The entries' prior games against the dummy use the plain Elo curve (`θ = 0`), so they say nothing about the draw setting.
 
-**Levels readout.** Once every entry has been compared a few times, the program shows how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. (Before that, the ratings have not spread out yet and the number would be misleadingly low.)
+**Levels readout.** Once every entry has been compared at least 3 times, the program shows how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. (Before that, the ratings have not spread out yet and the number would be misleadingly low.)
 
 ### Fitting
 
@@ -268,11 +283,15 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 - `internal/pairing`: choosing the next pair to compare.
 - `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
 - `internal/tierlist`: one tier list (entries, answers, focus and display options), saving and loading it, and tying it to the packages above.
+- `internal/web`: the pages, served from HTML templates, a style sheet and a small script embedded in the program.
+- `cmd/tierlist`: the program itself, which starts the server and opens the browser.
 
 ## Build
 
 Recipes live in the `justfile`. Use `just`, not `make`.
 
+- `just run` runs the program; add options after it, as in `just run -no-browser`.
+- `just build` builds the program into `bin/`.
 - `just test` runs the tests.
 - `just vet` runs `go vet`.
 - `just check` runs both.

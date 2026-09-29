@@ -1,0 +1,30 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} · {{end}}tierlist</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">tierlist</a>
+  {{with .List}}
+  <span class="list-name">{{.Name}}</span>
+  <nav aria-label="List pages">
+    <a href="{{.URL}}/rate"{{if eq $.Page "rate"}} aria-current="page"{{end}}>Rate</a>
+    <a href="{{.URL}}/entries"{{if eq $.Page "entries"}} aria-current="page"{{end}}>Entries</a>
+    <a href="{{.URL}}/tiers"{{if eq $.Page "tiers"}} aria-current="page"{{end}}>Tier list</a>
+  </nav>
+  {{end}}
+  <form class="quit" method="post" action="/quit"><button class="subtle">Quit</button></form>
+</header>
+<main>
+  {{with .Message}}<p class="note" role="status">{{.}}</p>{{end}}
+  {{with .Error}}<p class="note error" role="alert">{{.}}</p>{{end}}
+  {{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

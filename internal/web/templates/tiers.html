@@ -1,0 +1,72 @@
+{{define "content"}}
+<form method="post" action="{{.List.URL}}/display" class="display" data-autosubmit>
+  <fieldset>
+    <legend>Template</legend>
+    <div class="kinds">
+      <label class="check"><input type="radio" name="kind" value="stars"{{if eq .Form.Kind "stars"}} checked{{end}}> Stars</label>
+      <label class="check"><input type="radio" name="kind" value="hogwarts"{{if eq .Form.Kind "hogwarts"}} checked{{end}}> Hogwarts</label>
+      <label class="check"><input type="radio" name="kind" value="custom" data-wait{{if eq .Form.Kind "custom"}} checked{{end}}> Custom</label>
+    </div>
+    <div class="for-stars">
+      <label class="field">Most stars <input type="number" name="maxStars" min="3" value="{{.Form.MaxStars}}"></label>
+      <label class="check"><input type="checkbox" name="skipZero"{{if .Form.SkipZero}} checked{{end}}> Start at 1 star, not 0</label>
+      <label class="field">Split each star into <input type="number" name="divisions" min="1" value="{{.Form.Divisions}}"></label>
+      <span class="muted small">1 means whole stars only, 2 gives half-stars.</span>
+    </div>
+    <div class="for-custom" data-wait>
+      <span class="muted small">Fill these in, then press Apply.</span>
+      <label class="field">Name <input name="customName" value="{{.Form.CustomName}}" autocomplete="off"></label>
+      <label class="field">Tiers, best first, one per line
+        <textarea name="customTiers" rows="6">{{.Form.CustomTiers}}</textarea></label>
+      <label class="field">Cut-offs between tiers, from 0 (worst) to 1 (best), as decimals or fractions
+        <textarea name="customCutoffs" rows="5" placeholder="1/3&#10;2/3">{{.Form.CustomCutoffs}}</textarea></label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Placement</legend>
+    <label class="field">An entry exactly on a cut-off goes
+      <select name="convention">
+        <option value="top-closed"{{if eq .Form.Convention "top-closed"}} selected{{end}}>up (top tier closed)</option>
+        <option value="bottom-closed"{{if eq .Form.Convention "bottom-closed"}} selected{{end}}>down (bottom tier closed)</option>
+      </select>
+    </label>
+    <label class="field">Draw-margin, in Elo
+      <input type="number" name="drawMargin" min="0" step="any" value="{{.Form.DrawMargin}}"></label>
+    <label class="field">A group of close entries goes where
+      <select name="groupRule">
+        <option value="middle-entry"{{if eq .Form.GroupRule "middle-entry"}} selected{{end}}>its middle entry would</option>
+        <option value="alternate"{{if eq .Form.GroupRule "alternate"}} selected{{end}}>its highest or lowest member would</option>
+      </select>
+    </label>
+    <label class="field">When that is split, or for the alternate rule, choose
+      <select name="prefer">
+        <option value="higher"{{if eq .Form.Prefer "higher"}} selected{{end}}>the higher tier</option>
+        <option value="lower"{{if eq .Form.Prefer "lower"}} selected{{end}}>the lower tier</option>
+      </select>
+    </label>
+  </fieldset>
+  <button class="primary apply">Apply</button>
+</form>
+
+{{if .Rows}}
+<section class="tierlist" aria-label="Tier list">
+  <h1>{{.List.Name}}</h1>
+  <div class="tiers">
+    {{range .Rows}}
+    <div class="tier" style="--hue: {{.Hue}}">
+      <div class="tier-label">{{.Name}}</div>
+      <div class="tier-entries">{{range .Entries}}<span class="chip">{{.}}</span>{{end}}</div>
+    </div>
+    {{end}}
+  </div>
+</section>
+<p class="muted small readout">Draw setting {{.DrawElo}} Elo · {{.Levels}}</p>
+<div class="plain">
+  <label for="plain">Plain text, to copy</label>
+  <textarea id="plain" readonly wrap="off" rows="{{.TextRows}}">{{.Text}}</textarea>
+</div>
+{{else}}
+<p>{{.Empty}}</p>
+<p><a class="button primary" href="{{.List.URL}}/entries">Add entries</a></p>
+{{end}}
+{{end}}

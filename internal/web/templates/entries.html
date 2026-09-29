@@ -1,0 +1,55 @@
+{{define "content"}}
+<h1>Entries</h1>
+<form method="post" action="{{.List.URL}}/entries" class="add">
+  <label for="names">Add entries, one per line</label>
+  <textarea id="names" name="names" rows="4" placeholder="Alien&#10;Brazil&#10;Casablanca"></textarea>
+  <button class="primary">Add</button>
+</form>
+
+{{if .Shown}}
+<h2>{{len .Shown}} entries, best first</h2>
+<p class="muted small">Edit a name and press Enter to rename it. Tick entries and choose “Focus on ticked” to compare only pairs that include them.</p>
+<form id="focus" method="post" action="{{.List.URL}}/focus"></form>
+<ul class="entries">
+  {{range .Shown}}
+  <li>
+    <input type="checkbox" form="focus" name="focus" value="{{.ID}}" aria-label="Focus on {{.Name}}"{{if .Focused}} checked{{end}}>
+    <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/rename" class="rename">
+      <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
+    </form>
+    <span class="rating" title="Rating in Elo, and its uncertainty">{{.Rating}} <span class="muted">{{.SD}}</span></span>
+    <span class="muted small">{{.Answers}} answers</span>
+    <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/remove">
+      <button class="subtle">Remove</button>
+    </form>
+  </li>
+  {{end}}
+</ul>
+<div class="actions">
+  <button form="focus" name="do" value="set">Focus on ticked</button>
+  {{if .Focus}}<button form="focus" name="do" value="clear">Leave focus mode</button>{{end}}
+</div>
+{{end}}
+
+{{if .Removed}}
+<h2>Removed</h2>
+<p class="muted small">Removed entries are left out of the tier list and new comparisons, but their answers still count toward the other entries' ratings.</p>
+<ul class="entries removed">
+  {{range .Removed}}
+  <li>
+    <span>{{.Name}}</span>
+    <span class="muted small">{{.Answers}} answers</span>
+    <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/restore">
+      <button class="subtle">Restore</button>
+    </form>
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
+<h2>List name</h2>
+<form method="post" action="{{.List.URL}}/rename" class="inline">
+  <input name="name" value="{{.List.Name}}" required aria-label="List name" autocomplete="off">
+  <button>Rename</button>
+</form>
+{{end}}

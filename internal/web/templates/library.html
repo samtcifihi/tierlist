@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Your tier lists</h1>
+{{if .Lists}}
+<ul class="lists">
+  {{range .Lists}}
+  <li>
+    {{if .Err}}
+    <span class="damaged">{{.File}}</span>
+    <span class="muted">can't be opened: {{.Err}}</span>
+    {{else}}
+    <a href="{{.URL}}">{{.Name}}</a>
+    <span class="muted">{{.Entries}} entries · {{.Answers}} answers · changed {{.Modified}}</span>
+    {{end}}
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="muted">No lists yet. Start one below.</p>
+{{end}}
+<form method="post" action="/lists" class="inline new-list">
+  <label for="new-name">New list</label>
+  <input id="new-name" name="name" required placeholder="Films, games, …" autocomplete="off">
+  <button class="primary">Create</button>
+</form>
+<p class="muted small">Lists are saved in {{.Dir}}</p>
+{{end}}
