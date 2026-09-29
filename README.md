@@ -26,6 +26,8 @@ Sorting uses **Bayes Elo**.
 
 Every real entry starts with a prior of one win and one loss against a single dummy entry. The dummy exists only for the prior; it is not part of the user-facing list and is not shown on the tierlist.
 
+The dummy's rating is fixed at 0, so every rating is relative to it.
+
 ### Comparisons
 
 The program presents two real entries and the user chooses one of:
@@ -35,6 +37,28 @@ The program presents two real entries and the user chooses one of:
 - they are about the same (a draw)
 
 Each answer is a result the Bayes Elo calculation uses. The finished comparison record is stored.
+
+### Model
+
+For entries A and B with ratings `rA` and `rB`, and a **draw setting** `θ ≥ 0`, all in Elo:
+
+- P(A is better) = `f(rA - rB - θ)`
+- P(B is better) = `f(rB - rA - θ)`
+- P(about the same) = the rest
+
+where `f(x) = 1 / (1 + 10^(-x/400))` is the usual Elo curve. The larger `θ`, the more room there is for "about the same": between two equally rated entries its probability is `1 - 2 f(-θ)`. Which entry was shown first makes no difference.
+
+### Draw setting
+
+The draw setting is estimated from the user's answers, along with the ratings. It has a prior of its own: one win, one loss and one draw between two equally rated entries. That prior alone puts `θ` at `400 log10(2)` (about 120 Elo), where "about the same" is exactly as likely as either side being better. It also keeps `θ` above 0 when the user has never answered "about the same", and finite when every answer has been.
+
+The entries' prior games against the dummy use the plain Elo curve (`θ = 0`), so they say nothing about the draw setting.
+
+### Fitting
+
+The ratings and the draw setting are their most probable values given the answers and the priors (the maximum of the posterior). The log-posterior is strictly concave, so there is exactly one maximum; the program finds it with Newton's method. The ratings' uncertainty, used for choosing pairs and for ± error bars, is the inverse of the negative Hessian of the log-posterior at the maximum.
+
+Because the maximum is unique, saved ratings only speed up the next fit: refitting the stored comparisons gives the same result.
 
 ### Choosing the next pair
 
@@ -175,6 +199,7 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 
 ## Code layout
 
+- `internal/bayeselo`: fitting ratings, the draw setting and the ratings' uncertainty to the comparisons.
 - `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
 
 ## Build
