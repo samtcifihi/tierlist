@@ -51,6 +51,141 @@ func TestStars(t *testing.T) {
 	}
 }
 
+// widths returns the sizes of a template's tiers, bottom first, each
+// worked out exactly before it is rounded.
+func widths(tmpl Template) []float64 {
+	bounds := append(append([]*big.Rat{big.NewRat(0, 1)}, tmpl.Cutoffs...), big.NewRat(1, 1))
+	w := make([]float64, len(bounds)-1)
+	for k := range w {
+		w[k] = ratFloat(new(big.Rat).Sub(bounds[k+1], bounds[k]))
+	}
+	return w
+}
+
+func TestGeometricTiers(t *testing.T) {
+	// 0–5 stars is 6 tiers. With a factor of 2 from the best tier, they are
+	// 1, 2, 4, 8, 16 and 32 parts of 63, best first.
+	tmpl := mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: GeometricTiers, Factor: 2}}, TopClosed)
+	want := []float64{32, 16, 8, 4, 2, 1} // bottom first
+	for k, w := range widths(tmpl) {
+		if math.Abs(w-want[k]/63) > 1e-15 {
+			t.Errorf("tier %d from the bottom covers %g, want %g", k, w, want[k]/63)
+		}
+	}
+	// From the worst tier the other way round, and a factor below 1 runs
+	// the other way too: 1/2 from the best is 2 from the worst.
+	a := mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: GeometricTiers, Factor: 2, FromWorst: true}}, TopClosed)
+	b := mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: GeometricTiers, Factor: 0.5}}, TopClosed)
+	for k := range a.Cutoffs {
+		if math.Abs(ratFloat(a.Cutoffs[k])-ratFloat(b.Cutoffs[k])) > 1e-15 || math.Abs(widths(a)[k]-want[5-k]/63) > 1e-15 {
+			t.Errorf("cut-off %d: %v from the worst, %v with factor 1/2", k, a.Cutoffs[k].FloatString(6), b.Cutoffs[k].FloatString(6))
+		}
+	}
+	// Any number of tiers and any factor still covers [0, 1], with the same
+	// factor between neighbours; a factor of 1 makes every tier the same.
+	for _, factor := range []float64{1.618, 1, 0.8, 3} {
+		for _, stars := range []int{3, 10, 40} {
+			w := widths(mustStars(t, StarOptions{Max: stars, Divisions: 2, Sizes: Sizes{Kind: GeometricTiers, Factor: factor}}, BottomClosed))
+			for k := 1; k < len(w); k++ {
+				if r := w[k-1] / w[k]; math.Abs(r-factor) > 1e-9*factor {
+					t.Fatalf("factor %g, %d stars: tiers %d and %d from the bottom differ by %g", factor, stars, k-1, k, r)
+				}
+			}
+		}
+	}
+	for _, bad := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		if _, err := Stars(StarOptions{Max: 5, Sizes: Sizes{Kind: GeometricTiers, Factor: bad}}, TopClosed); err == nil {
+			t.Errorf("factor %g: want an error", bad)
+		}
+	}
+	// However steep, the tiers still cover [0, 1] in order (New checks
+	// that); ones too small for a float64 become tiny but keep their place.
+	// With a factor of 1e10 from the best, the best entry is alone at the
+	// top and the rest fall to the bottom tier, which is nearly all of it.
+	steep := mustStars(t, StarOptions{Max: 50, Sizes: Sizes{Kind: GeometricTiers, Factor: 1e10}}, TopClosed)
+	placed, err := Place([]float64{5, 4, 3, 2, 1}, steep, Options{})
+	if err != nil || !slices.Equal(placed, []int{0, 50, 50, 50, 50}) {
+		t.Errorf("five entries on a factor of 1e10: tiers %v, %v", placed, err)
+	}
+}
+
+func TestBetaTiers(t *testing.T) {
+	even := mustStars(t, StarOptions{Max: 5}, TopClosed)
+	beta := func(a, b float64) Template {
+		t.Helper()
+		return mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: a, Beta: b}}, TopClosed)
+	}
+	// Beta(1, 1) is uniform, so it gives exactly the even tiers.
+	for k, c := range beta(1, 1).Cutoffs {
+		if c.Cmp(even.Cutoffs[k]) != 0 {
+			t.Errorf("Beta(1, 1) cut-off %d is %s, want %s", k, c.RatString(), even.Cutoffs[k].RatString())
+		}
+	}
+	// Each cut-off is the distribution's CDF at the even one: for Beta(2, 2)
+	// that is 3x² - 2x³, so 0.028 at 0.1. Symmetric parameters give
+	// cut-offs exactly symmetric about 1/2, and middle tiers bigger than
+	// even ones, where Beta(½, ½) makes the end tiers bigger instead.
+	b22, half := beta(2, 2), beta(0.5, 0.5)
+	if c := ratFloat(b22.Cutoffs[0]); math.Abs(c-0.028) > 1e-15 {
+		t.Errorf("Beta(2, 2) first cut-off %g, want 0.028", c)
+	}
+	for _, tmpl := range []Template{b22, half} {
+		n := len(tmpl.Cutoffs)
+		for k, c := range tmpl.Cutoffs {
+			if sum := new(big.Rat).Add(c, tmpl.Cutoffs[n-1-k]); sum.Cmp(big.NewRat(1, 1)) != 0 {
+				t.Errorf("cut-offs %d and %d add up to %s, not 1", k, n-1-k, sum.RatString())
+			}
+		}
+	}
+	ew, w22, wh := widths(even), widths(b22), widths(half)
+	if !(w22[0] < ew[0] && w22[2] > ew[2] && wh[0] > ew[0] && wh[2] < ew[2]) {
+		t.Errorf("tier sizes, bottom first: even %v, Beta(2, 2) %v, Beta(½, ½) %v", ew, w22, wh)
+	}
+	// A larger α makes the tiers near the top bigger, a larger β those near
+	// the bottom.
+	if top := widths(beta(5, 2)); !(top[5] > ew[5] && top[0] < ew[0]) {
+		t.Errorf("Beta(5, 2) tier sizes, bottom first: %v", top)
+	}
+	for _, bad := range [][2]float64{{0, 1}, {1, -2}, {math.NaN(), 1}, {1, 2e6}} {
+		if _, err := Stars(StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: bad[0], Beta: bad[1]}}, TopClosed); err == nil {
+			t.Errorf("Beta(%g, %g): want an error", bad[0], bad[1])
+		}
+	}
+	// Even very peaked distributions give a template, with the outer tiers
+	// tiny but in order, and still symmetric.
+	peaked := mustStars(t, StarOptions{Max: 10, Sizes: Sizes{Kind: BetaTiers, Alpha: 2000, Beta: 2000}}, TopClosed)
+	for k, c := range peaked.Cutoffs {
+		if sum := new(big.Rat).Add(c, peaked.Cutoffs[len(peaked.Cutoffs)-1-k]); sum.Cmp(big.NewRat(1, 1)) != 0 {
+			t.Errorf("Beta(2000, 2000): cut-offs %d from each end add up to %s", k, sum.FloatString(20))
+		}
+	}
+}
+
+// Reference values from scipy.special.betainc.
+func TestBetaCDF(t *testing.T) {
+	for _, c := range [][4]float64{
+		{0.05, 2, 2, 0.007250000000000001},
+		{0.35, 2, 2, 0.28174999999999994},
+		{0.5, 0.5, 0.5, 0.5000000000000001},
+		{0.05, 0.5, 0.5, 0.14356629312870628},
+		{0.95, 0.5, 0.5, 0.8564337068712936},
+		{0.25, 2, 5, 0.466064453125},
+		{0.75, 2, 5, 0.995361328125},
+		{0.15, 0.01, 0.3, 0.9544750168396194},
+		{0.45, 50, 50, 0.1586521989370985},
+		{0.3, 200, 300, 1.049698524329301e-06},
+		{0.999, 3, 0.2, 0.6685414839010846},
+		{0.001, 0.2, 3, 0.33145851609891525},
+		{0.6, 1, 1, 0.6},
+		{0.1, 1, 3, 0.271},
+		{0.9, 7.5, 1.25, 0.5598232691710877},
+	} {
+		if got := betaCDF(c[0], c[1], c[2]); math.Abs(got-c[3]) > 1e-12*c[3] {
+			t.Errorf("betaCDF(%g, %g, %g) = %.17g, want %.17g", c[0], c[1], c[2], got, c[3])
+		}
+	}
+}
+
 func TestStarsRejects(t *testing.T) {
 	bad := []StarOptions{
 		{Max: 2},

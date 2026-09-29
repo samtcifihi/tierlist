@@ -253,9 +253,14 @@ legend { font-weight: 600; padding: 0 .3rem; }
 .kinds { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; }
 label.field { display: grid; gap: .2rem; }
 label.check { display: flex; gap: .4rem; align-items: center; }
-.for-stars, .for-custom { display: none; gap: .6rem; }
+.for-stars, .for-custom, .for-geometric, .for-beta, .for-even { display: none; gap: .6rem; }
 .display:has(input[value="stars"]:checked) .for-stars,
-.display:has(input[value="custom"]:checked) .for-custom { display: grid; }
+.display:has(input[value="custom"]:checked) .for-custom,
+.display:has(option[value="geometric"]:checked) .for-geometric,
+.display:has(option[value="beta"]:checked) .for-beta,
+.display:has(option[value="even"]:checked) .for-even { display: grid; }
+.params { display: flex; gap: 1rem; }
+.params input { width: 6rem; }
 .display .apply { grid-column: 1 / -1; justify-self: start; }
 
 .tierlist { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; }

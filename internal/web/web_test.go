@@ -291,8 +291,8 @@ func TestTierListPage(t *testing.T) {
 	c.answer(base, 2, 3, 1, "a")
 	status, body := c.get(base + "/tiers")
 	if status != http.StatusOK || !strings.Contains(body, `<div class="tier" style="--hue: 250">
-      <div class="tier-label">10★</div>`) ||
-		!strings.Contains(body, "10★: Alien\n9★:\n8★:\n7★:\n6★:\n5★: Brazil\n4★:\n3★:\n2★:\n1★:\n0★: Casablanca") {
+      <div class="tier-label">10★ (1)</div>`) ||
+		!strings.Contains(body, "10★ (1): Alien\n9★ (0):\n8★ (0):\n7★ (0):\n6★ (0):\n5★ (1): Brazil\n4★ (0):\n3★ (0):\n2★ (0):\n1★ (0):\n0★ (1): Casablanca") {
 		t.Fatalf("tier list page: %d\n%s", status, body)
 	}
 	fit, err := c.load("films").Fit()
@@ -315,7 +315,7 @@ func TestTierListPage(t *testing.T) {
 		t.Errorf("choosing Hogwarts: %d", status)
 	}
 	// Switching back to stars from here starts at 10 stars.
-	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding: Alien") ||
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding (1): Alien") ||
 		!strings.Contains(body, `name="maxStars" min="3" value="10"`) {
 		t.Errorf("Hogwarts tier list:\n%s", body)
 	}
@@ -852,5 +852,74 @@ func TestIgnoring(t *testing.T) {
 	}
 	if _, _, _, body := c.question(base); len(c.load("letters").IgnoredEntries) != 0 || strings.Contains(body, "Undo: ignoring") {
 		t.Errorf("after resetting ignores: %v ignored\n%s", c.load("letters").IgnoredEntries, body)
+	}
+}
+
+func TestTierSizes(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+	for k := 1; k < 10; k++ {
+		c.answer(base, k, k+1, k-1, "a")
+	}
+	display := func(extra url.Values) (int, string) {
+		form := mergeForm(url.Values{"kind": {"stars"}, "maxStars": {"3"}})
+		for k, v := range extra {
+			form[k] = v
+		}
+		req, _ := http.NewRequest("POST", c.srv.URL+base+"/display", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		status, _, body := c.do(req)
+		return status, body
+	}
+	// New lists start with even tiers, and the form offers the other
+	// kinds with their usual numbers filled in.
+	_, body := c.get(base + "/tiers")
+	for _, want := range []string{`<option value="even" selected>Even</option>`, `name="factor" value="1.618"`, `<div class="for-beta" data-wait>`,
+		`<option value="best" selected>the best tier</option>`, `name="alpha" value="2"`, `name="beta" value="2"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tier list page lacks %q", want)
+		}
+	}
+	// Ten entries on 0–3 stars, with each tier twice the size of the one
+	// above: 1, 2, 4 and 8 fifteenths, best first.
+	if status, _ := display(url.Values{"sizes": {"geometric"}, "factor": {"2"}, "from": {"best"}}); status != http.StatusSeeOther {
+		t.Fatalf("choosing geometric tiers: %d", status)
+	}
+	l := c.load("letters")
+	if tm := l.Display.Template; tm.Sizes != "geometric" || tm.Factor != "2" || tm.From != "best" || tm.Alpha != "" {
+		t.Errorf("saved template %+v", tm)
+	}
+	_, body = c.get(base + "/tiers")
+	if !strings.Contains(body, "3★ (1): A\n2★ (1): B\n1★ (3): C, D, E\n0★ (5): F, G, H, I, J") ||
+		!strings.Contains(body, `<option value="geometric" selected>`) {
+		t.Errorf("geometric tier list:\n%s", body)
+	}
+	// Beta(1/2, 1/2) makes the end tiers bigger than even ones: the
+	// cut-offs move from 1/6, 1/2 and 5/6 to about 0.268, 1/2 and 0.732,
+	// so ten entries go 3, 2, 2, 3 instead of 2, 3, 3, 2.
+	display(url.Values{"sizes": {"beta"}, "alpha": {"1/2"}, "beta": {"0.5"}})
+	if tm := c.load("letters").Display.Template; tm.Sizes != "beta" || tm.Alpha != "1/2" || tm.Beta != "0.5" || tm.Factor != "" {
+		t.Errorf("saved template %+v", tm)
+	}
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "3★ (3): A, B, C\n2★ (2): D, E\n1★ (2): F, G\n0★ (3): H, I, J") ||
+		!strings.Contains(body, `name="alpha" value="1/2"`) {
+		t.Errorf("Beta(1/2, 1/2) tier list:\n%s", body)
+	}
+	for _, bad := range []struct {
+		form url.Values
+		want string
+	}{
+		{url.Values{"sizes": {"geometric"}, "factor": {"-1"}}, "above 0"},
+		{url.Values{"sizes": {"geometric"}, "factor": {"lots"}}, "must be a number"},
+		{url.Values{"sizes": {"beta"}, "alpha": {"0"}, "beta": {"2"}}, "above 0"},
+		{url.Values{"sizes": {"beta"}, "alpha": {"2"}, "beta": {""}}, "β must be a number"},
+		{url.Values{"sizes": {"square"}}, "choose how big the tiers are"},
+	} {
+		if status, body := display(bad.form); status != http.StatusBadRequest || !strings.Contains(strings.ToLower(body), strings.ToLower(bad.want)) {
+			t.Errorf("%v: %d, want an error mentioning %q\n%s", bad.form, status, bad.want, body)
+		}
+	}
+	if tm := c.load("letters").Display.Template; tm.Sizes != "beta" {
+		t.Errorf("a rejected form changed the saved template to %+v", tm)
 	}
 }

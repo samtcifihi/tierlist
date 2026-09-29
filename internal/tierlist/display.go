@@ -3,6 +3,7 @@ package tierlist
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/samtcifihi/tierlist/internal/bayeselo"
 	"github.com/samtcifihi/tierlist/internal/tier"
@@ -38,6 +39,14 @@ type Template struct {
 	MaxStars  int  `json:"maxStars,omitempty"`
 	SkipZero  bool `json:"skipZero,omitempty"`
 	Divisions int  `json:"divisions,omitempty"`
+	// Sizes is how big the star tiers are: "" for even tiers, "geometric"
+	// or "beta" (see tier.Sizes), with the numbers as the user wrote them,
+	// as decimals or fractions.
+	Sizes  string `json:"sizes,omitempty"`
+	Factor string `json:"factor,omitempty"` // geometric: each tier's size over the one before's
+	From   string `json:"from,omitempty"`   // geometric: counting from the "best" (default) or "worst" tier
+	Alpha  string `json:"alpha,omitempty"`  // beta
+	Beta   string `json:"beta,omitempty"`   // beta
 
 	// For a custom template: its name, its tier names (best first) and its
 	// cut-offs (increasing) as the user wrote them.
@@ -82,7 +91,11 @@ func (d Display) template() (tier.Template, error) {
 	t := d.Template
 	switch t.Kind {
 	case "stars":
-		return tier.Stars(tier.StarOptions{Max: t.MaxStars, SkipZero: t.SkipZero, Divisions: t.Divisions}, c)
+		sizes, err := t.sizes()
+		if err != nil {
+			return tier.Template{}, err
+		}
+		return tier.Stars(tier.StarOptions{Max: t.MaxStars, SkipZero: t.SkipZero, Divisions: t.Divisions, Sizes: sizes}, c)
 	case "hogwarts":
 		return tier.Hogwarts(c)
 	case "custom":
@@ -97,6 +110,45 @@ func (d Display) template() (tier.Template, error) {
 		return tier.New(t.Name, t.Tiers, cutoffs, c)
 	}
 	return tier.Template{}, fmt.Errorf("unknown template kind %q", t.Kind)
+}
+
+// sizes reads how big the star tiers are.
+func (t Template) sizes() (tier.Sizes, error) {
+	switch t.Sizes {
+	case "":
+		return tier.Sizes{}, nil
+	case "geometric":
+		f, err := number(t.Factor, "the factor between tier sizes")
+		if err != nil {
+			return tier.Sizes{}, err
+		}
+		if t.From != "" && t.From != "best" && t.From != "worst" {
+			return tier.Sizes{}, fmt.Errorf("geometric tiers count from the best or the worst tier, not %q", t.From)
+		}
+		return tier.Sizes{Kind: tier.GeometricTiers, Factor: f, FromWorst: t.From == "worst"}, nil
+	case "beta":
+		a, err := number(t.Alpha, "α")
+		if err != nil {
+			return tier.Sizes{}, err
+		}
+		b, err := number(t.Beta, "β")
+		if err != nil {
+			return tier.Sizes{}, err
+		}
+		return tier.Sizes{Kind: tier.BetaTiers, Alpha: a, Beta: b}, nil
+	}
+	return tier.Sizes{}, fmt.Errorf("unknown tier sizes %q", t.Sizes)
+}
+
+// number reads a number written as a decimal or a fraction, such as 1.618
+// or 1/2.
+func number(s, what string) (float64, error) {
+	r, ok := new(big.Rat).SetString(strings.TrimSpace(s))
+	if !ok {
+		return 0, fmt.Errorf("%s must be a number, such as 1.5 or 3/2, not %q", what, s)
+	}
+	f, _ := r.Float64()
+	return f, nil
 }
 
 // options returns the placement options, with the draw-margin still in

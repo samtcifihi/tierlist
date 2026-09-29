@@ -526,6 +526,10 @@ func TestDisplayOptions(t *testing.T) {
 		{Template: Template{Kind: "hogwarts"}, Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 		{Template: Template{Kind: "custom", Name: "Thirds", Tiers: []string{"Top", "Middle", "Bottom"}, Cutoffs: []string{"1/3", "0.666"}},
 			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "stars", MaxStars: 5, Sizes: "geometric", Factor: "1.618", From: "worst"},
+			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
+		{Template: Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "1/2", Beta: "3"},
+			Convention: "top-closed", GroupRule: "middle-entry", Prefer: "higher"},
 	}
 	for _, d := range good {
 		if _, err := d.template(); err != nil {
@@ -547,6 +551,12 @@ func TestDisplayOptions(t *testing.T) {
 		func(d *Display) { d.Prefer = "" },
 		func(d *Display) { d.DrawMargin = -1 },
 		func(d *Display) { d.DrawMargin = math.NaN() },
+		func(d *Display) { d.Template.Sizes, d.Template.Factor = "geometric", "0" },
+		func(d *Display) { d.Template.Sizes, d.Template.Factor = "geometric", "golden" },
+		func(d *Display) { d.Template.Sizes, d.Template.Factor, d.Template.From = "geometric", "2", "middle" },
+		func(d *Display) { d.Template.Sizes, d.Template.Alpha, d.Template.Beta = "beta", "-1", "2" },
+		func(d *Display) { d.Template.Sizes, d.Template.Alpha, d.Template.Beta = "beta", "2", "" },
+		func(d *Display) { d.Template.Sizes = "square" },
 	}
 	for k, change := range bad {
 		d := DefaultDisplay()

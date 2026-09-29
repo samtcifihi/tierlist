@@ -12,6 +12,32 @@
       <label class="check"><input type="checkbox" name="skipZero"{{if .Form.SkipZero}} checked{{end}}> Start at 1 star, not 0</label>
       <label class="field">Split each star into <input type="number" name="divisions" min="1" value="{{.Form.Divisions}}"></label>
       <span class="muted small">1 means whole stars only, 2 gives half-stars.</span>
+      <label class="field">Tier sizes
+        <select name="sizes">
+          <option value="even"{{if eq .Form.Sizes "even"}} selected{{end}}>Even</option>
+          <option value="geometric"{{if eq .Form.Sizes "geometric"}} selected{{end}}>Geometric</option>
+          <option value="beta"{{if eq .Form.Sizes "beta"}} selected{{end}}>Beta distribution</option>
+        </select>
+      </label>
+      <span class="muted small for-even">Each entry gets the nearest star, so the top and bottom tiers are half the size of the others.</span>
+      <div class="for-geometric">
+        <label class="field">Each tier is this many times the size of the one before
+          <input name="factor" value="{{.Form.Factor}}" autocomplete="off"></label>
+        <label class="field">Counting from
+          <select name="from">
+            <option value="best"{{if eq .Form.From "best"}} selected{{end}}>the best tier</option>
+            <option value="worst"{{if eq .Form.From "worst"}} selected{{end}}>the worst tier</option>
+          </select>
+        </label>
+        <span class="muted small">Above 1, the tiers grow away from where the counting starts; below 1, they shrink.</span>
+      </div>
+      <div class="for-beta" data-wait>
+        <div class="params">
+          <label class="field">α <input name="alpha" value="{{.Form.Alpha}}" autocomplete="off"></label>
+          <label class="field">β <input name="beta" value="{{.Form.Beta}}" autocomplete="off"></label>
+        </div>
+        <span class="muted small">Each tier gets the share of a Beta(α, β) distribution that lies over its even tier. 1 and 1 give even tiers; 2 and 2 make the middle tiers bigger; 1/2 and 1/2, the end tiers. A larger α makes the tiers near the top bigger, a larger β those near the bottom. Press Enter or Apply after changing them.</span>
+      </div>
     </div>
     <div class="for-custom" data-wait>
       <span class="muted small">Fill these in, then press Apply.</span>
@@ -55,7 +81,7 @@
   <div class="tiers">
     {{range .Rows}}
     <div class="tier" style="--hue: {{.Hue}}">
-      <div class="tier-label">{{.Name}}</div>
+      <div class="tier-label">{{.Label}}</div>
       <div class="tier-entries">{{range .Entries}}<span class="chip">{{.}}</span>{{end}}</div>
     </div>
     {{end}}

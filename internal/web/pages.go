@@ -630,12 +630,20 @@ type tierRow struct {
 	Entries []string
 }
 
+// Label is the tier's name with how many entries it holds.
+func (r tierRow) Label() string { return fmt.Sprintf("%s (%d)", r.Name, len(r.Entries)) }
+
 // displayForm holds the display options as the form shows them.
 type displayForm struct {
 	Kind          string
 	MaxStars      string
 	SkipZero      bool
 	Divisions     string
+	Sizes         string
+	Factor        string
+	From          string
+	Alpha         string
+	Beta          string
 	CustomName    string
 	CustomTiers   string
 	CustomCutoffs string
@@ -648,12 +656,15 @@ type displayForm struct {
 func formFor(d tierlist.Display) displayForm {
 	f := displayForm{
 		Kind: d.Template.Kind, MaxStars: "10", Divisions: "1", CustomName: "Custom",
+		Sizes: "even", Factor: "1.618", From: "best", Alpha: "2", Beta: "2",
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
 		GroupRule: d.GroupRule, Prefer: d.Prefer,
 	}
 	switch t := d.Template; t.Kind {
 	case "stars":
 		f.MaxStars, f.SkipZero, f.Divisions = strconv.Itoa(t.MaxStars), t.SkipZero, strconv.Itoa(max(t.Divisions, 1))
+		f.Sizes = cmp.Or(t.Sizes, "even")
+		f.Factor, f.From, f.Alpha, f.Beta = cmp.Or(t.Factor, f.Factor), cmp.Or(t.From, f.From), cmp.Or(t.Alpha, f.Alpha), cmp.Or(t.Beta, f.Beta)
 	case "custom":
 		f.CustomName, f.CustomTiers, f.CustomCutoffs = t.Name, strings.Join(t.Tiers, "\n"), strings.Join(t.Cutoffs, "\n")
 	}
@@ -694,7 +705,7 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 				tr.Entries = append(tr.Entries, names[id])
 			}
 			v.Rows = append(v.Rows, tr)
-			lines = append(lines, strings.TrimSpace(tr.Name+": "+strings.Join(tr.Entries, ", ")))
+			lines = append(lines, strings.TrimSpace(tr.Label()+": "+strings.Join(tr.Entries, ", ")))
 		}
 		v.Text, v.TextRows = strings.Join(lines, "\n"), len(lines)+1
 		fit, err := l.Fit()
@@ -735,6 +746,8 @@ func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
 	f := displayForm{
 		Kind: r.FormValue("kind"), MaxStars: strings.TrimSpace(r.FormValue("maxStars")),
 		SkipZero: r.FormValue("skipZero") != "", Divisions: strings.TrimSpace(r.FormValue("divisions")),
+		Sizes: cmp.Or(r.FormValue("sizes"), "even"), Factor: strings.TrimSpace(r.FormValue("factor")),
+		From: cmp.Or(r.FormValue("from"), "best"), Alpha: strings.TrimSpace(r.FormValue("alpha")), Beta: strings.TrimSpace(r.FormValue("beta")),
 		CustomName: strings.TrimSpace(r.FormValue("customName")), CustomTiers: r.FormValue("customTiers"),
 		CustomCutoffs: r.FormValue("customCutoffs"), Convention: r.FormValue("convention"),
 		DrawMargin: strings.TrimSpace(r.FormValue("drawMargin")), GroupRule: r.FormValue("groupRule"),
@@ -757,6 +770,15 @@ func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
 			divisions = 0
 		}
 		d.Template = tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions}
+		switch f.Sizes {
+		case "even":
+		case "geometric":
+			d.Template.Sizes, d.Template.Factor, d.Template.From = f.Sizes, f.Factor, f.From
+		case "beta":
+			d.Template.Sizes, d.Template.Alpha, d.Template.Beta = f.Sizes, f.Alpha, f.Beta
+		default:
+			return d, f, errors.New("choose how big the tiers are")
+		}
 	case "hogwarts":
 		d.Template = tierlist.Template{Kind: "hogwarts"}
 	case "custom":
