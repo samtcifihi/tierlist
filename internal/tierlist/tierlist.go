@@ -25,6 +25,10 @@ const (
 type Entry struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+	// URL, if any, is a web page about the entry, and Description says a
+	// little about it; the pages show both with the entry's name.
+	URL         string `json:"url,omitempty"`
+	Description string `json:"description,omitempty"`
 	// Removed entries are left out of the tier list, focus mode and new
 	// comparisons, but their answers still count toward the other entries'
 	// ratings.
@@ -115,6 +119,17 @@ func (l *List) RenameEntry(id int, name string) error {
 		return err
 	}
 	e.Name = name
+	return nil
+}
+
+// SetEntryDetails sets the URL and description of the entry with ID id;
+// empty ones mean none.
+func (l *List) SetEntryDetails(id int, url, description string) error {
+	e, err := l.entry(id)
+	if err != nil {
+		return err
+	}
+	e.URL, e.Description = strings.TrimSpace(url), strings.TrimSpace(description)
 	return nil
 }
 

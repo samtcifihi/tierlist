@@ -217,8 +217,46 @@ func Create(dir, name string) (string, *List, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path, err := saveNew(dir, l)
+	if err != nil {
 		return "", nil, err
+	}
+	return path, l, nil
+}
+
+// Import saves a copy of a list, from the text of its file as Save writes
+// it, in dir as a new list, and returns its path. It never replaces a
+// list: if one of the lists in dir already has its name, the copy's name
+// gets a number, as in "Films (2)".
+func Import(dir string, data []byte) (string, *List, error) {
+	l, err := decode(data)
+	if err != nil {
+		return "", nil, err
+	}
+	sums, err := Lists(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	taken := make(map[string]bool)
+	for _, sm := range sums {
+		taken[strings.ToLower(sm.Name)] = true
+	}
+	name := l.Name
+	for k := 2; taken[strings.ToLower(l.Name)]; k++ {
+		l.Name = fmt.Sprintf("%s (%d)", name, k)
+	}
+	path, err := saveNew(dir, l)
+	if err != nil {
+		return "", nil, err
+	}
+	return path, l, nil
+}
+
+// saveNew saves l in dir under a file name made from its name, never
+// replacing a file, and returns the path.
+func saveNew(dir string, l *List) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
 	}
 	base := fileName(l.Name)
 	for k := 1; k <= 1000; k++ {
@@ -233,16 +271,16 @@ func Create(dir, name string) (string, *List, error) {
 			continue
 		}
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		f.Close()
 		if err := l.Save(path); err != nil {
 			os.Remove(path)
-			return "", nil, err
+			return "", err
 		}
-		return path, l, nil
+		return path, nil
 	}
-	return "", nil, fmt.Errorf("too many lists called %q", l.Name)
+	return "", fmt.Errorf("too many lists called %q", l.Name)
 }
 
 // fileName turns a list's name into a file name without extension: its

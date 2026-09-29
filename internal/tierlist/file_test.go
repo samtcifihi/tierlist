@@ -131,6 +131,24 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestSaveEntryDetails(t *testing.T) {
+	l := mustNew(t, "Films", "Alien", "Brazil")
+	l.SetEntryDetails(1, "https://example.com/alien", `In space, no one can hear you scream. "Classic."`)
+	path := filepath.Join(t.TempDir(), "films.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	// Each entry stays on one line, and one without details has none.
+	if !bytes.Contains(data, []byte(`{"id":1,"name":"Alien","url":"https://example.com/alien","description":"In space, no one can hear you scream. \"Classic.\""}`)) ||
+		!bytes.Contains(data, []byte(`{"id":2,"name":"Brazil"}`)) {
+		t.Errorf("saved entries:\n%s", data)
+	}
+	if l2, err := Load(path); err != nil || !reflect.DeepEqual(l2.Entries, l.Entries) {
+		t.Errorf("loaded entries %+v, %v; want %+v", l2.Entries, err, l.Entries)
+	}
+}
+
 func TestSaveNamedTiers(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B")
 	l.Display.Template = Template{Kind: "named", Tiers: []string{"S", "A", "B", "C"}, Sizes: "beta", Alpha: "1/2", Beta: "2"}
@@ -221,6 +239,45 @@ func TestLoadRejects(t *testing.T) {
 		`"display":{"template":{"kind":"hogwarts"},"convention":"top-closed","drawMargin":0,"groupRule":"middle-entry","prefer":"higher"}}`
 	if l, err := decode([]byte(bare)); err != nil || l.Entries == nil || l.Comparisons == nil || l.Display.Template.Kind != "owl-newt" {
 		t.Errorf("a list without entries or comparisons, saved with the Hogwarts template: %v, %v", l, err)
+	}
+}
+
+func TestImport(t *testing.T) {
+	// A list saved elsewhere, as its file's text.
+	from := mustNew(t, "Films", "Alien", "Brazil")
+	from.SetEntryDetails(1, "https://example.com/alien", "Sci-fi horror")
+	mustRecord(t, from, 1, 2, FirstBetter)
+	src := filepath.Join(t.TempDir(), "films.json")
+	if err := from.Save(src); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(src)
+
+	dir := filepath.Join(t.TempDir(), "lists")
+	path, l, err := Import(dir, append(append([]byte("\n  "), data...), "\n\n"...))
+	if err != nil || filepath.Base(path) != "films.json" || l.Name != "Films" {
+		t.Fatalf("importing: %s, %v", path, err)
+	}
+	if got, err := Load(path); err != nil || !reflect.DeepEqual(got.Entries, from.Entries) || !reflect.DeepEqual(got.Comparisons, from.Comparisons) {
+		t.Errorf("imported %+v, %v; want the entries and answers of %+v", got, err, from)
+	}
+	// Importing it again never replaces it, and the copies get numbers.
+	for _, want := range []struct{ file, name string }{{"films-2.json", "Films (2)"}, {"films-3.json", "Films (3)"}} {
+		path, l, err := Import(dir, data)
+		if err != nil || filepath.Base(path) != want.file || l.Name != want.name {
+			t.Errorf("importing again: %s, %q, %v; want %s, %q", path, l.Name, err, want.file, want.name)
+		}
+	}
+	if got, _ := Load(filepath.Join(dir, "films.json")); got.Name != "Films" || len(got.Comparisons) != 1 {
+		t.Errorf("the first import changed: %+v", got)
+	}
+	for _, bad := range []string{"", "not json", `{"format":"something else","version":1}`, string(data[:len(data)/2])} {
+		if _, _, err := Import(dir, []byte(bad)); err == nil {
+			t.Errorf("importing %.30q: want an error", bad)
+		}
+	}
+	if sums, _ := Lists(dir); len(sums) != 3 {
+		t.Errorf("after the bad imports, %d lists; want 3", len(sums))
 	}
 }
 

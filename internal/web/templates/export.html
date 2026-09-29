@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1>Export “{{.Name}}”</h1>
+<p>This is the list's whole file, <code>{{.File}}</code>: its entries, answers and display options. To copy it into another copy of tierlist, click in the box, press Ctrl+A and Ctrl+C (⌘A and ⌘C on a Mac), and paste it into <b>Import a list</b> on that copy's start page.</p>
+<textarea class="file-text" readonly wrap="off" rows="{{.Rows}}" aria-label="The file of “{{.Name}}”">{{.Text}}</textarea>
+<p class="muted small">The file is saved at {{.Path}}</p>
+<p><a href="/">Back to your lists</a></p>
+{{end}}

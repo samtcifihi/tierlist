@@ -76,6 +76,16 @@ func TestEditing(t *testing.T) {
 	if l.RenameEntry(9, "x") == nil || l.RenameEntry(1, " ") == nil {
 		t.Error("RenameEntry of a missing entry or to a blank name: want errors")
 	}
+	if err := l.SetEntryDetails(1, " https://example.com/alien ", " Sci-fi horror. "); err != nil ||
+		l.Entries[0].URL != "https://example.com/alien" || l.Entries[0].Description != "Sci-fi horror." {
+		t.Errorf("SetEntryDetails: %v, entry now %+v", err, l.Entries[0])
+	}
+	if err := l.SetEntryDetails(1, "", ""); err != nil || l.Entries[0].URL != "" || l.Entries[0].Description != "" {
+		t.Errorf("clearing the details: %v, entry now %+v", err, l.Entries[0])
+	}
+	if l.SetEntryDetails(9, "", "") == nil {
+		t.Error("SetEntryDetails of a missing entry: want an error")
+	}
 	for _, c := range []Comparison{{1, 9, FirstBetter}, {9, 1, FirstBetter}, {1, 1, AboutSame}, {1, 2, "maybe"}} {
 		if l.Record(c.A, c.B, c.Answer) == nil {
 			t.Errorf("Record(%v): want an error", c)
@@ -246,32 +256,39 @@ func TestCountsAndLevels(t *testing.T) {
 	if c := l.Counts(); c[1] != 1 || c[2] != 2 || c[3] != 1 {
 		t.Errorf("counts %v", c)
 	}
-	if _, ready, err := l.Levels(); err != nil || ready {
-		t.Errorf("after two answers: ready %v, error %v; want not ready", ready, err)
+	// The readout comes with how many answers its entries have each on
+	// average: here 1, 2 and 1.
+	if _, each, ok, err := l.Levels(); err != nil || !ok || each != 4.0/3 {
+		t.Errorf("after two answers: %g answers each, %v, %v", each, ok, err)
 	}
 	for range 2 {
 		mustRecord(t, l, 1, 2, FirstBetter)
 		mustRecord(t, l, 2, 3, FirstBetter)
 		mustRecord(t, l, 1, 3, FirstBetter)
 	}
-	levels, ready, err := l.Levels()
-	if err != nil || !ready || !(levels > 1) {
-		t.Errorf("after eight answers: %g levels, ready %v, error %v", levels, ready, err)
+	levels, each, ok, err := l.Levels()
+	if err != nil || !ok || !(levels > 1) || each != 16.0/3 {
+		t.Errorf("after eight answers: %g levels, %g answers each, %v, %v", levels, each, ok, err)
 	}
-	// A removed entry no longer counts, even without enough answers.
+	// A new entry with no answers brings the average down.
 	l.AddEntry("D")
-	if _, ready, _ := l.Levels(); ready {
-		t.Error("a new entry with no answers should hold the readout back")
+	if _, each, _, _ := l.Levels(); each != 4 {
+		t.Errorf("with a new entry, %g answers each; want 4", each)
 	}
-	// Neither does an ignored one, which may be unknown to the user.
+	// An ignored one doesn't count, as the user may not know it, and nor
+	// does a removed one.
 	l.IgnoreEntry(4)
-	if _, ready, _ := l.Levels(); !ready {
-		t.Error("an ignored entry should not hold the readout back")
+	if _, each, _, _ := l.Levels(); each != 16.0/3 {
+		t.Errorf("with the new entry ignored, %g answers each", each)
 	}
 	l.UnignoreEntry(4)
 	l.RemoveEntry(4)
-	if _, ready, _ := l.Levels(); !ready {
-		t.Error("a removed entry should not hold the readout back")
+	if _, each, _, _ := l.Levels(); each != 16.0/3 {
+		t.Errorf("with the new entry removed, %g answers each", each)
+	}
+	// With one entry there is nothing to tell apart.
+	if _, _, ok, err := mustNew(t, "One", "A").Levels(); ok || err != nil {
+		t.Errorf("a lone entry: %v, %v", ok, err)
 	}
 }
 

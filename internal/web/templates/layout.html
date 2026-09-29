@@ -30,6 +30,13 @@
 </html>
 {{end}}
 
+{{/* A small link to an entry's web page, if it has one, opening in a new
+     tab. The dot is anything with Name and URL. */}}
+{{define "entry-link"}}{{with .URL}}<a class="entry-link" href="{{.}}" target="_blank" rel="noopener noreferrer" title="Open the link for {{$.Name}}" aria-label="Open the link for {{$.Name}}">&#x2197;&#xFE0E;</a>{{end}}{{end}}
+
+{{/* The levels readout, after " · ", with its warning sign, if any. */}}
+{{define "levels"}}{{with .Text}} · {{.}}{{end}}{{with .Warning}} <span class="warn" role="img" aria-label="{{.}}" title="{{.}}">&#x26A0;&#xFE0E;</span>{{end}}{{end}}
+
 {{/* A button that opens a confirm dialog, and the dialog. Cancel, the
      button with the focus when it opens, closes it without sending. */}}
 {{define "delete-button"}}<button type="button" class="subtle delete" data-dialog="{{.ID}}">Delete</button>{{end}}

@@ -84,12 +84,12 @@
     {{range .Rows}}
     <div class="tier" style="--hue: {{.Hue}}">
       <div class="tier-label">{{.Label}}</div>
-      <div class="tier-entries">{{range .Entries}}<span class="chip">{{.}}</span>{{end}}</div>
+      <div class="tier-entries">{{range .Entries}}{{if .URL}}<a class="chip" href="{{.URL}}" target="_blank" rel="noopener noreferrer"{{with .Description}} title="{{.}}"{{end}}>{{.Name}}</a>{{else}}<span class="chip"{{with .Description}} title="{{.}}"{{end}}>{{.Name}}</span>{{end}}{{end}}</div>
     </div>
     {{end}}
   </div>
 </section>
-<p class="muted small readout"><span title="How often two equally rated entries are called about the same">Draw setting {{.Draw}}</span> · {{.Levels}}</p>
+<p class="muted small readout"><span title="How often two equally rated entries are called about the same">Draw setting {{.Draw}}</span>{{template "levels" .Levels}}</p>
 <div class="plain">
   <label for="plain">Plain text, to copy</label>
   <textarea id="plain" readonly wrap="off" rows="{{.TextRows}}">{{.Text}}</textarea>

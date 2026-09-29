@@ -20,8 +20,9 @@ import (
 
 type libraryView struct {
 	view
-	Dir   string
-	Lists []listSummary
+	Dir        string
+	Lists      []listSummary
+	ImportText string // what the box for importing a list holds
 }
 
 type listSummary struct {
@@ -52,12 +53,22 @@ func deleteDialog(id, url, name string, entries, answers int) confirm {
 }
 
 func (s *Server) library(w http.ResponseWriter, r *http.Request) {
+	s.showLibrary(w, r, "", "", http.StatusOK)
+}
+
+// showLibrary renders the start page, with importText in the box for
+// importing a list and errText as an error, when that text couldn't be
+// imported.
+func (s *Server) showLibrary(w http.ResponseWriter, r *http.Request, importText, errText string, status int) {
 	sums, err := tierlist.Lists(s.dir)
 	if err != nil {
 		s.message(w, http.StatusInternalServerError, "Your lists can't be read", err.Error())
 		return
 	}
-	v := libraryView{view: s.view(r, "library", nil), Dir: s.dir}
+	v := libraryView{view: s.view(r, "library", nil), Dir: s.dir, ImportText: importText}
+	if errText != "" {
+		v.Error = errText
+	}
 	for k, sm := range sums {
 		file := filepath.Base(sm.Path)
 		item := listSummary{
@@ -73,7 +84,7 @@ func (s *Server) library(w http.ResponseWriter, r *http.Request) {
 		}
 		v.Lists = append(v.Lists, item)
 	}
-	s.render(w, http.StatusOK, "library", v)
+	s.render(w, status, "library", v)
 }
 
 func (s *Server) createList(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +175,7 @@ type rateView struct {
 	TopMode       string         // top mode in words, while it is on
 	Answers       int
 	Draw          string // the draw setting, as a percentage
-	Levels        string
+	Levels        levelsReadout
 	Focus         []string // names of the entries in focus mode
 }
 
@@ -508,19 +519,36 @@ func drawText(fit *tierlist.Fit) string {
 	return fmt.Sprintf("%.0f%%", 100*fit.SameChance())
 }
 
-func levelsText(l *tierlist.List) string {
-	levels, ready, err := l.Levels()
-	switch {
-	case err != nil:
-		return ""
-	case !ready:
-		return fmt.Sprintf("the levels readout appears once every entry has %d answers", tierlist.LevelsAfter)
+// A levelsReadout says how many levels the user tells apart, with a
+// warning while the entries have too few answers for it to mean much.
+type levelsReadout struct {
+	Text, Warning string
+}
+
+func levelsText(l *tierlist.List) levelsReadout {
+	levels, each, ok, err := l.Levels()
+	if err != nil || !ok {
+		return levelsReadout{}
 	}
-	return fmt.Sprintf("you're telling about %.0f levels apart", levels)
+	r := levelsReadout{Text: "you're telling about " + plural(int(math.Round(levels)), "level", "levels") + " apart"}
+	how := ""
+	switch {
+	case each < tierlist.RoughAnswers:
+		how = "Highly unreliable"
+	case each < tierlist.ReliableAnswers:
+		how = "Unreliable"
+	default:
+		return r
+	}
+	// Rounded down, so that 2.97 answers doesn't read as 3.0, enough.
+	r.Warning = fmt.Sprintf("%s: the entries have %.1f answers each on average, and this settles down once they have about %d.",
+		how, math.Floor(each*10)/10, tierlist.ReliableAnswers)
+	return r
 }
 
 type entriesView struct {
 	view
+	AddText  string // what the box for adding entries holds
 	Shown    []entryRow
 	Removed  []entryRow
 	Focus    bool
@@ -533,16 +561,24 @@ type entriesView struct {
 }
 
 type entryRow struct {
-	ID      int
-	Name    string
-	Rating  string
-	SD      string
-	Answers int
-	Focused bool
-	Ignored bool
+	ID          int
+	Name        string
+	URL         string
+	Description string
+	Rating      string
+	SD          string
+	Answers     int
+	Focused     bool
+	Ignored     bool
 }
 
 func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
+	s.showEntries(w, r, ol, "", "", http.StatusOK)
+}
+
+// showEntries renders the entries page, with addText in the box for adding
+// entries and errText as an error, when that box's text couldn't be read.
+func (s *Server) showEntries(w http.ResponseWriter, r *http.Request, ol *openList, addText, errText string, status int) {
 	l := ol.list
 	fit, err := l.Fit()
 	if err != nil {
@@ -550,14 +586,15 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 		return
 	}
 	counts := l.Counts()
-	v := entriesView{view: s.view(r, "entries", ol), Focus: len(l.Focus) > 0, Answers: len(l.Comparisons),
+	v := entriesView{view: s.view(r, "entries", ol), AddText: addText, Focus: len(l.Focus) > 0, Answers: len(l.Comparisons),
 		Reset: confirm{ID: "reset-list", Action: listURL(ol.key) + "/reset", Title: "Reset “" + l.Name + "”?",
 			Text:   fmt.Sprintf("Its %s will be deleted. The entries stay, and their ratings start over at 1500.", plural(len(l.Comparisons), "answer", "answers")),
 			Button: "Reset"},
 		Delete: deleteDialog("delete-list", listURL(ol.key), l.Name, len(l.Shown()), len(l.Comparisons))}
 	for _, e := range l.Entries {
 		row := entryRow{
-			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID), Ignored: l.EntryIgnored(e.ID),
+			ID: e.ID, Name: e.Name, URL: e.URL, Description: e.Description,
+			Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID), Ignored: l.EntryIgnored(e.ID),
 			Rating: fmt.Sprintf("%.0f", fit.Points(e.ID)), SD: fmt.Sprintf("± %.0f", fit.PointsSD(e.ID)),
 		}
 		if e.Removed {
@@ -569,7 +606,10 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
 	v.Ignoring = ignoring(l)
 	v.CSV, v.CSVRows = entriesCSV(v.Shown, fit), min(len(v.Shown)+2, 20)
-	s.render(w, http.StatusOK, "entries", v)
+	if errText != "" {
+		v.Error = errText
+	}
+	s.render(w, status, "entries", v)
 }
 
 // entriesCSV writes the rows as CSV under a header row: each entry's name,
@@ -606,40 +646,83 @@ func ignoring(l *tierlist.List) string {
 	return ""
 }
 
+// addEntries adds the entries in the box, one a line (see
+// parseEntryLines). A title already in the list updates that entry
+// instead, with the details the line gives, so it keeps its answers. If a
+// line can't be read, nothing changes, and the page shows the text again
+// to fix.
 func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
-	have := make(map[string]bool)
+	text := r.FormValue("names")
+	lines, err := parseEntryLines(text)
+	if err != nil {
+		s.showEntries(w, r, ol, text, sentence(err.Error()), http.StatusBadRequest)
+		return
+	}
+	have := make(map[string]int)
 	for _, e := range l.Shown() {
-		have[strings.ToLower(e.Name)] = true
+		have[strings.ToLower(e.Name)] = e.ID
 	}
-	added, skipped := 0, 0
-	for _, line := range strings.Split(r.FormValue("names"), "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" {
+	added, updated, skipped := 0, 0, 0
+	for _, line := range lines {
+		id, ok := have[strings.ToLower(line.name)]
+		if !ok {
+			if id, err = l.AddEntry(line.name); err != nil {
+				s.showEntries(w, r, ol, text, sentence(err.Error()), http.StatusBadRequest)
+				return
+			}
+			have[strings.ToLower(line.name)] = id
+			added++
+		}
+		e := l.Entries[slices.IndexFunc(l.Entries, func(e tierlist.Entry) bool { return e.ID == id })]
+		url, description := e.URL, e.Description
+		if line.given > 1 {
+			url = line.url
+		}
+		if line.given > 2 {
+			description = line.description
+		}
+		if url == e.URL && description == e.Description {
+			if ok {
+				skipped++
+			}
 			continue
 		}
-		if have[strings.ToLower(name)] {
-			skipped++
-			continue
+		l.SetEntryDetails(id, url, description)
+		if ok {
+			updated++
 		}
-		have[strings.ToLower(name)] = true
-		if _, err := l.AddEntry(name); err != nil {
-			back(w, r, listURL(ol.key)+"/entries", "", err.Error())
-			return
-		}
-		added++
 	}
-	if added > 0 {
+	if added+updated > 0 {
 		if !s.saved(w, ol) {
 			return
 		}
-		ol.replan()
+		if added > 0 {
+			ol.replan()
+		}
 	}
 	msg := fmt.Sprintf("Added %s.", plural(added, "entry", "entries"))
+	if updated > 0 {
+		msg += fmt.Sprintf(" Updated %s already in the list.", plural(updated, "entry", "entries"))
+	}
 	if skipped > 0 {
 		msg += fmt.Sprintf(" Skipped %s already in the list.", plural(skipped, "name", "names"))
 	}
 	back(w, r, listURL(ol.key)+"/entries", msg, "")
+}
+
+// curtail shortens s to at most n characters, at a space if there is one
+// near the end, marking the cut with an ellipsis.
+func curtail(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	cut := string(r[:n-1])
+	if i := strings.LastIndexByte(cut, ' '); i > len(cut)*3/4 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,.;:") + "…"
 }
 
 func plural(n int, one, many string) string {
@@ -744,13 +827,13 @@ type tiersView struct {
 	TextRows int    // lines for its text box, with room for a scroll bar
 	Empty    string // why there is no tier list
 	Draw     string // the draw setting, as a percentage
-	Levels   string
+	Levels   levelsReadout
 }
 
 type tierRow struct {
 	Name    string
 	Hue     int
-	Entries []string
+	Entries []tierlist.Entry
 }
 
 // Label is the tier's name with how many entries it holds.
@@ -824,7 +907,6 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 		s.message(w, http.StatusInternalServerError, "The tier list can't be worked out", err.Error())
 		return
 	default:
-		names := entryNames(l)
 		stars := l.Display.Template.Kind == "stars"
 		var lines []string
 		for i, row := range rows {
@@ -832,11 +914,14 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 			if stars {
 				tr.Name += "★"
 			}
+			var names []string
 			for _, id := range row.Entries {
-				tr.Entries = append(tr.Entries, names[id])
+				e := entryByID(l, id)
+				tr.Entries = append(tr.Entries, e)
+				names = append(names, e.Name)
 			}
 			v.Rows = append(v.Rows, tr)
-			lines = append(lines, strings.TrimSpace(tr.Label()+": "+strings.Join(tr.Entries, ", ")))
+			lines = append(lines, strings.TrimSpace(tr.Label()+": "+strings.Join(names, ", ")))
 		}
 		v.Text, v.TextRows = strings.Join(lines, "\n"), len(lines)+1
 		fit, err := l.Fit()

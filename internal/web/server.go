@@ -143,10 +143,11 @@ func New(dir string) (*Server, error) {
 		quit:  make(chan struct{}),
 	}
 	funcs := template.FuncMap{
-		"join":   func(xs []string) string { return strings.Join(xs, ", ") },
-		"plural": plural, // as in {{plural .Answers "answer" "answers"}}
+		"join":    func(xs []string) string { return strings.Join(xs, ", ") },
+		"plural":  plural,  // as in {{plural .Answers "answer" "answers"}}
+		"curtail": curtail, // as in {{curtail .Description 300}}
 	}
-	for _, page := range []string{"library", "rate", "entries", "tiers", "answers", "message"} {
+	for _, page := range []string{"library", "export", "rate", "entries", "tiers", "answers", "message"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -170,6 +171,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "tierlist") })
 	mux.HandleFunc("GET /{$}", s.library)
 	mux.HandleFunc("POST /lists", s.createList)
+	mux.HandleFunc("POST /lists/import", s.importList)
+	mux.HandleFunc("GET /lists/{list}/export", s.exportList)
 	mux.HandleFunc("GET /lists/{list}", s.withList(s.listHome))
 	mux.HandleFunc("POST /lists/{list}/rename", s.withList(s.renameList))
 	mux.HandleFunc("POST /lists/{list}/delete", s.deleteList)

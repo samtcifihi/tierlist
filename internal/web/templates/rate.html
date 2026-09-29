@@ -43,18 +43,26 @@
     </ol>
     {{end}}
     <h1 class="question">Which is better?</h1>
-    <button class="choice" name="answer" value="a" data-keys="ArrowLeft 1">
-      <span class="choice-name">{{.First.Name}}</span>
-      <span class="key"><kbd>←</kbd> or <kbd>1</kbd></span>
-    </button>
+    <div class="choice-cell">
+      <button class="choice" name="answer" value="a" data-keys="ArrowLeft 1">
+        <span class="choice-name">{{.First.Name}}</span>
+        {{with .First.Description}}<span class="choice-desc" title="{{.}}">{{curtail . 300}}</span>{{end}}
+        <span class="key"><kbd>←</kbd> or <kbd>1</kbd></span>
+      </button>
+      {{template "entry-link" .First}}
+    </div>
     <button class="same" name="answer" value="same" data-keys="ArrowDown ArrowUp 2">
       About the same
       <span class="key"><kbd>↓</kbd> or <kbd>2</kbd></span>
     </button>
-    <button class="choice" name="answer" value="b" data-keys="ArrowRight 3">
-      <span class="choice-name">{{.Second.Name}}</span>
-      <span class="key"><kbd>→</kbd> or <kbd>3</kbd></span>
-    </button>
+    <div class="choice-cell">
+      <button class="choice" name="answer" value="b" data-keys="ArrowRight 3">
+        <span class="choice-name">{{.Second.Name}}</span>
+        {{with .Second.Description}}<span class="choice-desc" title="{{.}}">{{curtail . 300}}</span>{{end}}
+        <span class="key"><kbd>→</kbd> or <kbd>3</kbd></span>
+      </button>
+      {{template "entry-link" .Second}}
+    </div>
     <div class="ignores">
       <button class="subtle" formaction="{{.List.URL}}/ignore" name="ignore" value="a" data-keys="4"
         title="Don't ask about {{.First.Name}} until you reset ignores">Ignore {{.First.Name}} <kbd>4</kbd></button>
@@ -75,7 +83,7 @@
   {{end}}
   {{with .Last}}<p class="muted small" title="In brackets, how many percentage points this answer moved each entry: + up the list, - down">{{.}}</p>{{end}}
   {{if .Ready}}
-  <p class="muted small"><a class="muted" href="{{.List.URL}}/answers">{{plural .Answers "answer" "answers"}}</a> · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{with .Levels}} · {{.}}{{end}}</p>
+  <p class="muted small"><a class="muted" href="{{.List.URL}}/answers">{{plural .Answers "answer" "answers"}}</a> · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{template "levels" .Levels}}</p>
   {{if not .TopMode}}
   <form method="post" action="{{.List.URL}}/top" class="inline top-start">
     <label class="muted small">Favour the top <input type="number" name="top" min="1" max="100" step="any" value="20" required> %</label>

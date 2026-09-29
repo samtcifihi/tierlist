@@ -10,10 +10,10 @@ This project uses [just](https://github.com/casey/just), not make.
 
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
-- **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
+- **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone. **Export** shows a list's whole file in a box to copy, and **Import a list** takes such text, pasted in, and saves it as a new list, so lists move between computers without a trip to the folder they're saved in (see [Saved files](#saved-files)).
 - **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)). Below, a quiet line says where the two entries of the latest answer now stand in the list and how far it moved them, as in "Alien is now in the top 9% (+8)", and **Start top mode** narrows the pairs to the best entries (see [Top mode](#top-mode)).
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)). **CSV, to copy** opens a box with the same list as CSV, to paste into a spreadsheet: a header row, then each entry's name, rating, CI width and number of answers. The CI width is the ± uncertainty listed with the rating, one standard deviation, in points; removed entries are left out.
-- **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)". Next to the template's options, a chart draws the template as a distribution (see [Distribution chart](#distribution-chart)); it follows the options as they are typed in, before they are applied.
+- **Entries:** add entries (one per line, so a list can be pasted in, each with an optional link and description; see [Entries](#entries)), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)). **CSV, to copy** opens a box with the same list as CSV, to paste into a spreadsheet: a header row, then each entry's name, rating, CI width and number of answers. The CI width is the ± uncertainty listed with the rating, one standard deviation, in points; removed entries are left out.
+- **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)", and an entry with a link opens it when clicked. Next to the template's options, a chart draws the template as a distribution (see [Distribution chart](#distribution-chart)); it follows the options as they are typed in, before they are applied.
 - **Answers:** every answer so far in a table, newest first and numbered in the order given: the entry judged better, `>`, and the other entry, or both entries with `≈` between them for "about the same". Under "Filter by entry", tick entries and choose whether to see the answers involving any of them or only the answers between two of them (which needs at least two ticked). An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
@@ -28,7 +28,13 @@ Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, 
 
 ## Entries
 
-Entries are text. Optional pictures for entries would be nice but are not required.
+Entries are text: a title, and optionally a link (a web page about the entry) and a description. Optional pictures for entries would be nice but are not required.
+
+Entries are added one per line, as CSV: the title, then, if wanted, the link and the description, separated by commas, as in `Alien, https://en.wikipedia.org/wiki/Alien_(film), Sci-fi horror, 1979`. The description is the rest of the line, so it can hold commas of its own; a title with a comma in it goes in quotes, as a CSV field does (`"Kill Bill, Vol. 1"`, with `""` for a quote inside). A link must be a web address; one written without `https://`, such as `example.com/alien`, gets it added. If any line can't be read (most often a title with an unquoted comma, whose second half then isn't a web address), nothing is added, and the page shows the text again with the line to fix.
+
+A title already in the list, in any case, doesn't add a second entry: it updates the one there, which keeps its ID, answers and rating. A link or description the line gives replaces the old one, even an empty one, which clears it (`Alien,,` clears both); one left off the end of the line stays as it was (`Alien` alone changes nothing).
+
+The pages show the details with the entries: on the rating page, the description under each entry's title, cut to three lines (the rest on hover), and the link in the corner of its box; on the entries page, the link beside the title and the description under it; and in the tier list, each entry's chip links to its page and shows its description on hover.
 
 Removing an entry hides it: it leaves the tier list, focus mode and new comparisons, but its answers still count toward the other entries' ratings. (If A beat X and X beat B, that still says A is better than B.) A removed entry can be restored.
 
@@ -100,7 +106,7 @@ The draw setting has a prior of its own: one win, one loss and one draw between 
 
 The entries' prior games against the dummy use the plain Elo curve (`θ = 0`), so they say nothing about the draw setting.
 
-**Levels readout.** Once every entry has been compared at least 3 times, the program shows how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. (Before that, the ratings have not spread out yet and the number would be misleadingly low.)
+**Levels readout.** The rating and tier list pages show how many levels the user is telling apart in the list, as defined above, from the fitted ratings and draw setting. Until the entries have been compared about 3 times each, the ratings have not spread out yet and the number runs misleadingly low, so a small warning sign follows it, explaining on hover: "unreliable" while the entries have fewer than 3 answers each on average, and "highly unreliable" below 1.
 
 ### Shown ratings
 
@@ -187,12 +193,12 @@ Loading that state must be enough to continue rating where a previous session le
 
 #### Saved files
 
-Each tier list is saved as one JSON file, by default in a `tierlist` folder in the user's configuration folder (`%AppData%\tierlist` on Windows). The file name comes from the list's name: its letters and digits in lower case, joined by hyphens, with a number added if the name is taken. Renaming the list later does not rename the file.
+Each tier list is saved as one JSON file, by default in a `tierlist` folder in the user's configuration folder (`%AppData%\tierlist` on Windows). The start page can show any list's file to copy (Export), even one that can't be opened as a list, so its text can be rescued, and can save pasted file text as a new list (Import). An import never replaces a list: if one with the same name is already there, the copy's name gets a number, as in "Films (2)". The file name comes from the list's name: its letters and digits in lower case, joined by hyphens, with a number added if the name is taken. Renaming the list later does not rename the file.
 
 A list file holds:
 
 - the list's name
-- the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes
+- the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes, and any link and description
 - every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
 - the focus set, while focus mode is on
 - the top mode percentage, while top mode is on
@@ -208,7 +214,7 @@ For example:
   "version": 1,
   "name": "Films",
   "entries": [
-    {"id":1,"name":"Alien","rating":115.86410113563915},
+    {"id":1,"name":"Alien","url":"https://en.wikipedia.org/wiki/Alien_(film)","description":"Sci-fi horror, 1979","rating":115.86410113563915},
     {"id":2,"name":"Brazil","rating":-115.86410113563912}
   ],
   "comparisons": [

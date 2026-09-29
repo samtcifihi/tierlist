@@ -76,31 +76,40 @@ func (f *Fit) drawMarginElo(points float64) float64 {
 	return max(points/f.scale, MinDrawMargin)
 }
 
-// LevelsAfter is how many answers every shown entry needs before the
-// levels readout means much; before that, the ratings have not spread out.
-const LevelsAfter = 3
+// The levels readout means little while its entries have few answers, as
+// their ratings have not spread out yet: it is unreliable while they have
+// fewer than ReliableAnswers each on average, and highly unreliable below
+// RoughAnswers.
+const (
+	ReliableAnswers = 3
+	RoughAnswers    = 1
+)
 
 // Levels returns how many levels of quality the user tells apart among the
-// shown entries (see bayeselo.Result.Levels), and whether every one of them
-// has at least LevelsAfter answers yet. Ignored entries are left out, as
-// the user may not know them.
-func (l *List) Levels() (levels float64, ready bool, err error) {
+// shown entries (see bayeselo.Result.Levels), and how many answers those
+// entries have each on average, which says how far to trust it. Ignored
+// entries are left out, as the user may not know them. It reports false if
+// fewer than two entries are left, as there is then nothing to tell apart.
+func (l *List) Levels() (levels, answersEach float64, ok bool, err error) {
 	fit, err := l.Fit()
 	if err != nil {
-		return 0, false, err
+		return 0, 0, false, err
 	}
 	counts := l.Counts()
 	var ratings []float64
-	ready = true
+	answers := 0
 	for _, e := range l.Shown() {
 		if l.EntryIgnored(e.ID) {
 			continue
 		}
 		ratings = append(ratings, fit.Rating(e.ID))
-		ready = ready && counts[e.ID] >= LevelsAfter
+		answers += counts[e.ID]
 	}
-	ready = ready && len(ratings) >= 2
-	return (&bayeselo.Result{Ratings: ratings, DrawElo: fit.DrawElo()}).Levels(), ready, nil
+	if len(ratings) < 2 {
+		return 0, 0, false, nil
+	}
+	levels = (&bayeselo.Result{Ratings: ratings, DrawElo: fit.DrawElo()}).Levels()
+	return levels, float64(answers) / float64(len(ratings)), true, nil
 }
 
 // Fit returns the Bayes Elo fit of the list's comparisons, redoing it if

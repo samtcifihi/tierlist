@@ -2,7 +2,8 @@
 <h1>Entries</h1>
 <form method="post" action="{{.List.URL}}/entries" class="add">
   <label for="names">Add entries, one per line</label>
-  <textarea id="names" name="names" rows="4" placeholder="Alien&#10;Brazil&#10;Casablanca"></textarea>
+  <textarea id="names" name="names" rows="4" placeholder="Alien, https://example.com/alien, Sci-fi horror, 1979&#10;Brazil&#10;&quot;Kill Bill, Vol. 1&quot;, , Revenge in two parts">{{.AddText}}</textarea>
+  <span class="muted small">Each line is a title, then, if you like, a link and a description, separated by commas; the description can hold commas of its own, but a title with a comma in it goes in quotes. A title already in the list updates that entry: a link or description the line gives replaces the old one, even an empty one, and one left off the end of the line stays.</span>
   <button class="primary">Add</button>
 </form>
 
@@ -14,9 +15,13 @@
   {{range .Shown}}
   <li>
     <input type="checkbox" form="focus" name="focus" value="{{.ID}}" aria-label="Focus on {{.Name}}"{{if .Focused}} checked{{end}}>
-    <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/rename" class="rename">
-      <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
-    </form>
+    <div class="entry-name">
+      <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/rename" class="rename">
+        <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
+      </form>
+      {{template "entry-link" .}}
+      {{with .Description}}<span class="muted small entry-desc" title="{{.}}">{{.}}</span>{{end}}
+    </div>
     <span class="rating" title="Rating in points (an entry not yet compared has 1500), and its uncertainty">{{.Rating}} <span class="muted">{{.SD}}</span></span>
     <span class="muted small"><a class="muted" href="{{$.List.URL}}/answers?entry={{.ID}}">{{plural .Answers "answer" "answers"}}</a>{{if .Ignored}} · ignored{{end}}</span>
     <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/remove">
@@ -35,7 +40,7 @@
   <button>Reset ignores</button>
 </form>
 {{end}}
-<details class="export">
+<details class="disclosure">
   <summary>CSV, to copy</summary>
   <textarea readonly wrap="off" rows="{{.CSVRows}}" aria-label="The entries as CSV">{{.CSV}}</textarea>
   <p class="muted small">Best first, with ratings and CI widths in points. The CI width is the ± uncertainty listed above: one standard deviation of the rating. Removed entries are left out.</p>

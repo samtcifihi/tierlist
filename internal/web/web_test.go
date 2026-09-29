@@ -141,6 +141,57 @@ func TestLibrary(t *testing.T) {
 	}
 }
 
+func TestExportImport(t *testing.T) {
+	dir := t.TempDir()
+	_, c := start(t, dir)
+	base := c.newList("Films", "Alien, example.com/alien, Sci-fi horror", "Brazil")
+	c.answer(base, 1, 2, 0, "a")
+	// The start page offers each list for export, and the export page
+	// shows its file as it is saved.
+	if _, body := c.get("/"); !strings.Contains(body, `href="/lists/films/export">Export</a>`) || !strings.Contains(body, "<summary>Import a list</summary>") {
+		t.Errorf("start page:\n%s", body)
+	}
+	status, body := c.get(base + "/export")
+	saved, _ := os.ReadFile(filepath.Join(dir, "films.json"))
+	m := regexp.MustCompile(`(?s)<textarea class="file-text"[^>]*>(.*?)</textarea>`).FindStringSubmatch(body)
+	if status != http.StatusOK || m == nil || html.UnescapeString(m[1]) != string(saved) || !strings.Contains(body, "<h1>Export “Films”</h1>") {
+		t.Fatalf("export page: %d\n%s", status, body)
+	}
+	// Importing that text adds a copy, next to the list, with a number.
+	if status, loc := c.post("/lists/import", url.Values{"data": {html.UnescapeString(m[1])}}); status != http.StatusSeeOther || !strings.Contains(loc, "msg=Imported") {
+		t.Errorf("importing: %d, %s", status, loc)
+	}
+	copied := c.load("films-2")
+	if copied.Name != "Films (2)" || len(copied.Comparisons) != 1 || copied.Entries[0].URL != "https://example.com/alien" {
+		t.Errorf("imported %+v", copied)
+	}
+	if c.load("films").Name != "Films" {
+		t.Error("importing changed the original list")
+	}
+	// Text that isn't a list file changes nothing, and comes back to fix.
+	req, _ := http.NewRequest("POST", c.srv.URL+"/lists/import", strings.NewReader(url.Values{"data": {`{"format":"tierlist"`}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	status, _, body = c.do(req)
+	if status != http.StatusBadRequest || !strings.Contains(body, "That can&#39;t be imported: not a readable tier list") ||
+		!strings.Contains(body, `{&#34;format&#34;:&#34;tierlist&#34;</textarea>`) || !strings.Contains(body, "<details class=\"disclosure import\" open>") {
+		t.Errorf("importing a broken file: %d\n%s", status, body)
+	}
+	if sums, _ := tierlist.Lists(dir); len(sums) != 2 {
+		t.Errorf("%d lists after a failed import; want 2", len(sums))
+	}
+	// A file that can't be opened as a list can still be exported, to
+	// rescue its text; a missing one can't.
+	os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{"name": "Half a list`), 0o644)
+	if status, body := c.get("/lists/broken/export"); status != http.StatusOK || !strings.Contains(body, `{&#34;name&#34;: &#34;Half a list</textarea>`) {
+		t.Errorf("exporting a damaged file: %d\n%s", status, body)
+	}
+	for _, path := range []string{"/lists/missing/export", "/lists/..%2Ffilms/export"} {
+		if status, _ := c.get(path); status != http.StatusNotFound {
+			t.Errorf("GET %s: %d, want 404", path, status)
+		}
+	}
+}
+
 func TestEntries(t *testing.T) {
 	_, c := start(t, t.TempDir())
 	base := c.newList("Films")
@@ -165,6 +216,121 @@ func TestEntries(t *testing.T) {
 	}
 	if status, loc := c.post(base+"/entries/9/remove", nil); status != http.StatusSeeOther || !strings.Contains(loc, "err=") {
 		t.Errorf("removing a missing entry: %d, %s", status, loc)
+	}
+}
+
+func TestEntryDetails(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien, example.com/alien, Sci-fi horror, 1979", "Brazil")
+	entry := func(name string) tierlist.Entry {
+		t.Helper()
+		for _, e := range c.load("films").Entries {
+			if e.Name == name {
+				return e
+			}
+		}
+		t.Fatalf("no entry %q", name)
+		return tierlist.Entry{}
+	}
+	if e := entry("Alien"); e.URL != "https://example.com/alien" || e.Description != "Sci-fi horror, 1979" {
+		t.Errorf("Alien added as %+v", e)
+	}
+	if e := entry("Brazil"); e.URL != "" || e.Description != "" {
+		t.Errorf("Brazil added as %+v", e)
+	}
+	c.answer(base, 1, 2, 0, "a")
+	add := func(text string) (int, string) {
+		t.Helper()
+		return c.post(base+"/entries", url.Values{"names": {text}})
+	}
+	// A title already in the list, in any case, updates that entry: an
+	// empty link given clears it, and it keeps its ID and answers.
+	if _, loc := add("alien, , Chestbursting"); !strings.Contains(loc, "Added+0+entries.+Updated+1+entry+already+in+the+list.") {
+		t.Errorf("updating Alien: %s", loc)
+	}
+	if e := entry("Alien"); e.ID != 1 || e.URL != "" || e.Description != "Chestbursting" || len(c.load("films").Comparisons) != 1 {
+		t.Errorf("Alien updated to %+v", e)
+	}
+	// A description left off the line stays, and a title alone changes
+	// nothing.
+	add("Alien, https://example.org/alien")
+	if e := entry("Alien"); e.URL != "https://example.org/alien" || e.Description != "Chestbursting" {
+		t.Errorf("Alien given only a link: %+v", e)
+	}
+	if _, loc := add("ALIEN"); !strings.Contains(loc, "Skipped+1+name+already+in+the+list.") {
+		t.Errorf("adding Alien alone again: %s", loc)
+	}
+	if e := entry("Alien"); e.URL != "https://example.org/alien" || e.Description != "Chestbursting" {
+		t.Errorf("Alien alone again: %+v", e)
+	}
+	if _, loc := add("Brazil\nCasablanca, example.com/c"); !strings.Contains(loc, "Added+1+entry.+Skipped+1+name+already+in+the+list.") {
+		t.Errorf("adding Brazil again and Casablanca: %s", loc)
+	}
+	// A line that can't be read changes nothing, and the page shows the
+	// text again, to fix.
+	status, _, body := func() (int, http.Header, string) {
+		req, _ := http.NewRequest("POST", c.srv.URL+base+"/entries", strings.NewReader(url.Values{"names": {"Dune\nKill Bill, Vol. 1"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return c.do(req)
+	}()
+	if status != http.StatusBadRequest || !strings.Contains(body, "Line 2, &#34;Kill Bill, Vol. 1&#34;: &#34;Vol. 1&#34; isn&#39;t a web address") ||
+		!strings.Contains(body, ">Dune\nKill Bill, Vol. 1</textarea>") || len(c.load("films").Entries) != 3 {
+		t.Errorf("a bad line: %d, %d entries\n%s", status, len(c.load("films").Entries), body)
+	}
+	// The entries page links each entry to its page and shows what it's about.
+	_, body = c.get(base + "/entries")
+	for _, want := range []string{`<a class="entry-link" href="https://example.org/alien" target="_blank" rel="noopener noreferrer"`,
+		`<span class="muted small entry-desc" title="Chestbursting">Chestbursting</span>`, `href="https://example.com/c"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("entries page lacks %q", want)
+		}
+	}
+	// The rating page shows what each entry of the pair is about, cut short
+	// if long, with its link in the corner of its box.
+	long := strings.Repeat("Very long indeed. ", 30)
+	add("Alien, https://example.org/alien, " + long + "\nBrazil,, Dystopia\nCasablanca,, Wartime romance")
+	a, b, _, body := c.question(base)
+	names := map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"}
+	descs := map[int]string{1: strings.TrimSpace(long), 2: "Dystopia", 3: "Wartime romance"}
+	for _, id := range []int{a, b} {
+		shown := descs[id]
+		if id == 1 {
+			shown = curtail(shown, 300)
+		}
+		if want := `<span class="choice-desc" title="` + descs[id] + `">` + shown + `</span>`; !strings.Contains(body, want) {
+			t.Errorf("rating page lacks %q", want)
+		}
+	}
+	if links := strings.Count(body, `class="entry-link"`); (a == 1 || b == 1) != (links == 1) {
+		t.Errorf("asking %s vs %s, the page has %d links", names[a], names[b], links)
+	}
+	// The tier list links an entry's chip to its page, and says what it's
+	// about on hover.
+	_, body = c.get(base + "/tiers")
+	for _, want := range []string{`<a class="chip" href="https://example.org/alien" target="_blank" rel="noopener noreferrer" title="` + strings.TrimSpace(long) + `">Alien</a>`,
+		`<span class="chip" title="Dystopia">Brazil</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tier list page lacks %q", want)
+		}
+	}
+}
+
+func TestCurtail(t *testing.T) {
+	for _, c := range []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"Short enough", 20, "Short enough"},
+		{"Exactly twenty chars", 20, "Exactly twenty chars"},
+		{"Cut at a space near the end, please", 30, "Cut at a space near the end…"},
+		{"Averyveryverylongwordwithnospaces", 10, "Averyvery…"},
+		{"Ünïcödé counts characters, not bytes", 10, "Ünïcödé…"},
+		{"Ünïcödé counts characters, not bytes", 12, "Ünïcödé cou…"},
+	} {
+		if got := curtail(c.s, c.n); got != c.want || len([]rune(got)) > c.n {
+			t.Errorf("curtail(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
 	}
 }
 
@@ -228,7 +394,45 @@ func TestRating(t *testing.T) {
 	}
 }
 
-var shownRatings = regexp.MustCompile(`value="([^"]+)" required aria-label="Name"[^<]*>\s*</form>\s*<span class="rating"[^>]*>(\d+) <span class="muted">± (\d+)</span>`)
+var shownRatings = regexp.MustCompile(`value="([^"]+)" required aria-label="Name"[^<]*>\s*</form>[^\x00]*?</div>\s*<span class="rating"[^>]*>(\d+) <span class="muted">± (\d+)</span>`)
+
+func TestLevelsReadout(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B", "C", "D")
+	warning := regexp.MustCompile(`levels? apart <span class="warn" role="img" aria-label="([^"]*)" title="[^"]*">`)
+	readout := func(page string) (shown bool, warn string) {
+		t.Helper()
+		_, body := c.get(base + "/" + page)
+		body = html.UnescapeString(body)
+		if m := warning.FindStringSubmatch(body); m != nil {
+			return true, m[1]
+		}
+		return strings.Contains(body, "levels apart") || strings.Contains(body, "level apart"), ""
+	}
+	// Shown from the start, but marked highly unreliable with no answers.
+	for _, page := range []string{"rate", "tiers"} {
+		if shown, warn := readout(page); !shown || warn != "Highly unreliable: the entries have 0.0 answers each on average, and this settles down once they have about 3." {
+			t.Errorf("%s page with no answers: shown %v, warning %q", page, shown, warn)
+		}
+	}
+	// Four answers among four entries make 2 each: unreliable.
+	n := 0
+	for _, p := range [][2]int{{1, 2}, {3, 4}, {1, 3}, {2, 4}} {
+		c.answer(base, p[0], p[1], n, "a")
+		n++
+	}
+	if shown, warn := readout("rate"); !shown || !strings.HasPrefix(warn, "Unreliable: the entries have 2.0 answers each") {
+		t.Errorf("with 2 answers each: shown %v, warning %q", shown, warn)
+	}
+	// Two more make 3 each, enough for no warning.
+	for _, p := range [][2]int{{1, 4}, {2, 3}} {
+		c.answer(base, p[0], p[1], n, "a")
+		n++
+	}
+	if shown, warn := readout("tiers"); !shown || warn != "" {
+		t.Errorf("with 3 answers each: shown %v, warning %q", shown, warn)
+	}
+}
 
 func TestRatingsShownInPoints(t *testing.T) {
 	_, c := start(t, t.TempDir())
@@ -263,7 +467,8 @@ func TestRatingsShownInPoints(t *testing.T) {
 
 func TestEntriesCSV(t *testing.T) {
 	_, c := start(t, t.TempDir())
-	base := c.newList("Films", "Alien", "Kill Bill, Vol. 1", `The "Thing"`, "Zardoz", "Heat")
+	// (A title with a comma goes in quotes, as a CSV field.)
+	base := c.newList("Films", "Alien", `"Kill Bill, Vol. 1"`, `The "Thing"`, "Zardoz", "Heat")
 	c.answer(base, 1, 2, 0, "a")
 	c.answer(base, 2, 3, 1, "same")
 	c.answer(base, 3, 4, 2, "a")
