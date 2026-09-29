@@ -8,7 +8,7 @@ This project uses [just](https://github.com/casey/just), not make.
 
 ## Using it
 
-Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists.
+Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
 - **Your lists:** the start page lists your saved tier lists and creates new ones.
 - **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
@@ -315,7 +315,8 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 
 Recipes live in the `justfile`. Use `just`, not `make`.
 
-- `just run` runs the program; add options after it, as in `just run -no-browser`.
+- `just run` runs the program; add options after it, as in `just run -port 7400`.
+- `just serve` runs the program without opening a browser; it takes options too.
 - `just build` builds the program into `bin/`.
 - `just test` runs the tests.
 - `just vet` runs `go vet`.

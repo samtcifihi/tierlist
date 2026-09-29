@@ -5,9 +5,13 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 default:
     @just --list
 
-# Run the program; pass flags after, e.g. `just run -no-browser`
+# Run the program; pass flags after, e.g. `just run -port 7400`
 run *flags:
     go run ./cmd/tierlist {{ flags }}
+
+# Run the program without opening a browser, to refresh a tab already open
+serve *flags:
+    go run ./cmd/tierlist -no-browser {{ flags }}
 
 # Build the program into bin/
 build:

@@ -1,0 +1,4 @@
+# Check out text files with LF line endings everywhere, Windows included.
+# The pages are built from embedded files, and the tests compare what they
+# serve line by line.
+* text=auto eol=lf

@@ -285,9 +285,10 @@ func TestTiers(t *testing.T) {
 }
 
 // Entries 2 and 3 each beat entry 1 once, so their ratings are equal in
-// theory; rounding leaves them about 3e-14 Elo apart. Alone they would land
-// in 5 and 4 stars, but the minimum draw-margin groups them, and the split
-// group goes to the higher tier.
+// theory. Rounding can leave them a hair apart (about 3e-14 Elo on amd64)
+// or exactly equal (on arm64). Alone they would land in 5 and 4 stars, but
+// the minimum draw-margin groups them, and the split group goes to the
+// higher tier.
 func TestTiedEntriesStayTogether(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B", "C", "D", "E")
 	mustRecord(t, l, 2, 1, FirstBetter)
@@ -295,15 +296,21 @@ func TestTiedEntriesStayTogether(t *testing.T) {
 	mustRecord(t, l, 4, 1, AboutSame)
 	mustRecord(t, l, 5, 1, AboutSame)
 	fit, _ := l.Fit()
-	if d := fit.Rating(2) - fit.Rating(3); d == 0 || math.Abs(d) > MinDrawMargin {
-		t.Fatalf("entries 2 and 3 are %g Elo apart; this test needs a gap of rounding size", d)
+	r := fit.res.Ratings // entry k is at index k-1
+	if d := r[1] - r[2]; math.Abs(d) > MinDrawMargin {
+		t.Fatalf("entries 2 and 3 are %g Elo apart; want a tie up to rounding", d)
 	}
-	rows, err := l.Tiers()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rows[0].Name != "5" || len(rows[0].Entries) != 2 {
-		t.Errorf("rows %v; want entries 2 and 3 together in 5 stars", rows)
+	// Whichever way rounding tips them, they stay together. Setting the
+	// fitted ratings directly makes this the same on every machine.
+	for _, gap := range []float64{0, 3e-14, -3e-14, MinDrawMargin / 2} {
+		r[2] = r[1] - gap
+		rows, err := l.Tiers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rows[0].Name != "5" || len(rows[0].Entries) != 2 {
+			t.Errorf("entries 2 and 3 %g Elo apart: rows %v; want both in 5 stars", gap, rows)
+		}
 	}
 	if got := fit.drawMarginElo(0); got != MinDrawMargin {
 		t.Errorf("a draw-margin of 0 is used as %g Elo, want %g", got, MinDrawMargin)
