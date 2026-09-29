@@ -274,6 +274,21 @@ func TestCountsAndLevels(t *testing.T) {
 	}
 }
 
+func TestPercentiles(t *testing.T) {
+	l := mustNew(t, "Letters", "A", "B", "C", "D", "E")
+	mustRecord(t, l, 1, 2, FirstBetter)
+	mustRecord(t, l, 2, 3, FirstBetter)
+	mustRecord(t, l, 3, 4, FirstBetter)
+	l.RemoveEntry(5)
+	pct, err := l.Percentiles()
+	if err != nil || !reflect.DeepEqual(pct, map[int]float64{1: 100, 2: 100 * 2.0 / 3, 3: 100.0 / 3, 4: 0}) {
+		t.Errorf("percentiles %v, %v", pct, err)
+	}
+	if pct, _ := mustNew(t, "One", "A").Percentiles(); pct[1] != 100 {
+		t.Errorf("a lone entry is at the %gth percentile", pct[1])
+	}
+}
+
 func TestIgnores(t *testing.T) {
 	l := mustNew(t, "Letters", "A", "B", "C", "D")
 	if err := l.IgnoreEntry(1); err != nil {
@@ -333,6 +348,80 @@ func TestIgnores(t *testing.T) {
 	l.ResetIgnores()
 	if len(l.IgnoredEntries) != 0 || !l.CanAsk(1, 2) {
 		t.Errorf("after ResetIgnores: %v", l.IgnoredEntries)
+	}
+}
+
+func TestTopMode(t *testing.T) {
+	// Ten entries in a known order: each beat the next once.
+	l := mustNew(t, "Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+	for id := 1; id < 10; id++ {
+		mustRecord(t, l, id, id+1, FirstBetter)
+	}
+	if err := l.SetTop(20); err != nil {
+		t.Fatal(err)
+	}
+	// Their percentiles are 100, 88.9, 77.8, 66.7, 55.6 and so on, so the
+	// top 20% is A and B, and pairs may only include the top 40%, A to D.
+	trues := func(m map[int]bool) []int {
+		var ids []int
+		for id, ok := range m {
+			if ok {
+				ids = append(ids, id)
+			}
+		}
+		slices.Sort(ids)
+		return ids
+	}
+	favoured, allowed, err := l.TopSets()
+	if err != nil || !slices.Equal(trues(favoured), []int{1, 2}) || !slices.Equal(trues(allowed), []int{1, 2, 3, 4}) {
+		t.Errorf("favoured %v, allowed %v, %v", trues(favoured), trues(allowed), err)
+	}
+	pairs, err := l.NextPairs(nil, 12, rand.New(rand.NewPCG(9, 9)))
+	for _, p := range pairs {
+		if p[0] > 4 || p[1] > 4 {
+			t.Errorf("top mode on 20%% asked about %v", p)
+		}
+	}
+	if err != nil || l.CanAsk(1, 5) || !l.CanAsk(1, 4) {
+		t.Errorf("NextPairs %v; CanAsk(1, 5) %v, CanAsk(1, 4) %v", err, l.CanAsk(1, 5), l.CanAsk(1, 4))
+	}
+	// An entry not compared yet is allowed, so that it gets placed.
+	l.AddEntry("K")
+	if _, allowed, _ := l.TopSets(); !allowed[11] {
+		t.Error("a new entry is left out of top mode")
+	}
+	// From 50% up every entry is allowed.
+	l.SetTop(50)
+	if _, allowed, _ := l.TopSets(); len(trues(allowed)) != 11 {
+		t.Errorf("top mode on 50%% allows %v", trues(allowed))
+	}
+	// Top mode is saved, and it and focus mode are never on together.
+	path := filepath.Join(t.TempDir(), "letters.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if l2, err := Load(path); err != nil || l2.Top != 50 {
+		t.Errorf("loaded top mode %v, %v", l2.Top, err)
+	}
+	l.SetFocus([]int{5})
+	if l.Top != 0 {
+		t.Error("focus mode left top mode on")
+	}
+	l.SetTop(10)
+	if l.Focus != nil {
+		t.Error("top mode left focus mode on")
+	}
+	for _, bad := range []float64{-1, 101, math.NaN()} {
+		if l.SetTop(bad) == nil {
+			t.Errorf("SetTop(%g): want an error", bad)
+		}
+	}
+	// With two entries, both are allowed however small the percentage.
+	two := mustNew(t, "Two", "A", "B")
+	mustRecord(t, two, 1, 2, FirstBetter)
+	two.SetTop(1)
+	if _, allowed, _ := two.TopSets(); !allowed[1] || !allowed[2] || !two.CanAsk(2, 1) {
+		t.Errorf("two entries on top 1%%: allowed %v", allowed)
 	}
 }
 

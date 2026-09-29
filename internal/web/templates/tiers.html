@@ -14,7 +14,7 @@
       <span class="muted small">1 means whole stars only, 2 gives half-stars.</span>
       <label class="field">Tier sizes
         <select name="sizes">
-          <option value="even"{{if eq .Form.Sizes "even"}} selected{{end}}>Even</option>
+          <option value="even"{{if eq .Form.Sizes "even"}} selected{{end}}>Nearest star</option>
           <option value="geometric"{{if eq .Form.Sizes "geometric"}} selected{{end}}>Geometric</option>
           <option value="beta"{{if eq .Form.Sizes "beta"}} selected{{end}}>Beta distribution</option>
         </select>
@@ -36,7 +36,7 @@
           <label class="field">α <input name="alpha" value="{{.Form.Alpha}}" autocomplete="off"></label>
           <label class="field">β <input name="beta" value="{{.Form.Beta}}" autocomplete="off"></label>
         </div>
-        <span class="muted small">Each tier gets the share of a Beta(α, β) distribution that lies over its even tier. 1 and 1 give even tiers; 2 and 2 make the middle tiers bigger; 1/2 and 1/2, the end tiers. A larger α makes the tiers near the top bigger, a larger β those near the bottom. Press Enter or Apply after changing them.</span>
+        <span class="muted small">Cut [0, 1] into as many equal parts as there are tiers; each tier gets the share of a Beta(α, β) distribution that lies over its part. 1 and 1 give tiers all the same size; 2 and 2 make the middle tiers bigger; 1/2 and 1/2, the end tiers. A larger α makes the tiers near the top bigger, a larger β those near the bottom. Press Enter or Apply after changing them.</span>
       </div>
     </div>
     <div class="for-custom" data-wait>

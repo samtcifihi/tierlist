@@ -176,9 +176,16 @@ func (l *List) NextPairs(pending [][2]int, k int, rng *rand.Rand) ([][2]int, err
 	for _, id := range l.Focus {
 		opts.Focus = append(opts.Focus, fit.index[id])
 	}
+	favoured, allowed, err := l.TopSets()
+	if err != nil {
+		return nil, err
+	}
 	for i, e := range l.Entries {
-		if e.Removed || l.EntryIgnored(e.ID) {
+		if e.Removed || l.EntryIgnored(e.ID) || (allowed != nil && !allowed[e.ID]) {
 			opts.Hidden = append(opts.Hidden, i)
+		}
+		if favoured[e.ID] {
+			opts.Favour = append(opts.Favour, i)
 		}
 	}
 	for _, p := range l.IgnoredPairs {
@@ -226,19 +233,10 @@ func (l *List) Tiers() ([]Row, error) {
 		return nil, err
 	}
 	opts.DrawMargin = fit.drawMarginElo(opts.DrawMargin)
-	// Rank the shown entries best first; equal ratings keep the list's
-	// order.
-	var order []int
-	for i, e := range l.Entries {
-		if !e.Removed {
-			order = append(order, i)
-		}
-	}
-	r := fit.res.Ratings
-	slices.SortStableFunc(order, func(i, j int) int { return cmp.Compare(r[j], r[i]) })
+	order := l.ranked(fit)
 	ratings := make([]float64, len(order))
 	for k, i := range order {
-		ratings[k] = r[i]
+		ratings[k] = fit.res.Ratings[i]
 	}
 	placed, err := tier.Place(ratings, tmpl, opts)
 	if err != nil {
@@ -252,4 +250,68 @@ func (l *List) Tiers() ([]Row, error) {
 		rows[placed[k]].Entries = append(rows[placed[k]].Entries, l.Entries[i].ID)
 	}
 	return rows, nil
+}
+
+// ranked returns the indices of the shown entries, best first. Equal
+// ratings keep the list's order.
+func (l *List) ranked(fit *Fit) []int {
+	var order []int
+	for i, e := range l.Entries {
+		if !e.Removed {
+			order = append(order, i)
+		}
+	}
+	r := fit.res.Ratings
+	slices.SortStableFunc(order, func(i, j int) int { return cmp.Compare(r[j], r[i]) })
+	return order
+}
+
+// percentile is the percentile of the k-th best of n entries, counting
+// from 0: 100 for the best, 0 for the worst, evenly spaced between, like
+// the positions tier templates use.
+func percentile(k, n int) float64 {
+	if n < 2 {
+		return 100
+	}
+	return 100 * float64(n-1-k) / float64(n-1)
+}
+
+// Percentiles returns each shown entry's percentile in the list, by ID
+// (see percentile), in the order the tier list uses.
+func (l *List) Percentiles() (map[int]float64, error) {
+	fit, err := l.Fit()
+	if err != nil {
+		return nil, err
+	}
+	order := l.ranked(fit)
+	out := make(map[int]float64, len(order))
+	for k, i := range order {
+		out[l.Entries[i].ID] = percentile(k, len(order))
+	}
+	return out, nil
+}
+
+// TopSets returns, by entry ID, the entries top mode favours, those at or
+// above the (100 - Top)th percentile, and the ones it allows in pairs at
+// all: those at or above the (100 - 2·Top)th, which is all of them from
+// Top = 50 up, the two best whatever Top is, and any not compared yet,
+// whose ratings mean nothing so far. With top mode off both are nil.
+func (l *List) TopSets() (favoured, allowed map[int]bool, err error) {
+	if l.Top <= 0 {
+		return nil, nil, nil
+	}
+	fit, err := l.Fit()
+	if err != nil {
+		return nil, nil, err
+	}
+	counts := l.Counts()
+	order := l.ranked(fit)
+	favoured, allowed = make(map[int]bool), make(map[int]bool)
+	for k, i := range order {
+		id := l.Entries[i].ID
+		p := percentile(k, len(order))
+		favoured[id] = p >= 100-l.Top
+		allowed[id] = p >= 100-2*l.Top || k < 2 || counts[id] == 0
+	}
+	return favoured, allowed, nil
 }

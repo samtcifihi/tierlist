@@ -52,6 +52,11 @@ type List struct {
 	// Focus holds the IDs of the entries in focus mode; empty means the
 	// default mode. It is saved, so focus mode lasts across sessions.
 	Focus []int `json:"focus,omitempty"`
+	// Top, above 0, turns on top mode: pairs favour the entries in the
+	// top Top percent of the list and include only entries in the top
+	// 2·Top percent (see TopSets). It is saved too, and never on together
+	// with focus mode.
+	Top float64 `json:"top,omitempty"`
 	// IgnoredEntries and IgnoredPairs, by ID, are left out of the pairs
 	// asked until the ignores are reset. Their answers still count, and
 	// ignored entries stay in the tier list.
@@ -205,6 +210,9 @@ func (l *List) Counts() map[int]int {
 // returns to the default mode if there are none. Removed entries cannot be
 // focused on.
 func (l *List) SetFocus(ids []int) error {
+	if len(ids) > 0 {
+		l.Top = 0
+	}
 	var focus []int
 	for _, id := range ids {
 		e, err := l.entry(id)
@@ -219,6 +227,19 @@ func (l *List) SetFocus(ids []int) error {
 		}
 	}
 	l.Focus = focus
+	return nil
+}
+
+// SetTop turns on top mode for the top p percent of the list, turning off
+// focus mode, or turns it off with p = 0.
+func (l *List) SetTop(p float64) error {
+	if !(p >= 0 && p <= 100) {
+		return fmt.Errorf("top mode needs a percentage above 0 and at most 100, not %v", p)
+	}
+	if p > 0 {
+		l.Focus = nil
+	}
+	l.Top = p
 	return nil
 }
 
@@ -272,13 +293,19 @@ func (l *List) PairIgnored(a, b int) bool {
 
 // CanAsk reports whether entries a and b can be asked about now: they are
 // different entries of the list, neither is removed or ignored, the pair
-// isn't ignored, and in focus mode one of them is in focus.
+// isn't ignored, in focus mode one of them is in focus, and in top mode
+// top mode allows both.
 func (l *List) CanAsk(a, b int) bool {
 	ea, errA := l.entry(a)
 	eb, errB := l.entry(b)
-	return errA == nil && errB == nil && a != b && !ea.Removed && !eb.Removed &&
+	ok := errA == nil && errB == nil && a != b && !ea.Removed && !eb.Removed &&
 		!l.EntryIgnored(a) && !l.EntryIgnored(b) && !l.PairIgnored(a, b) &&
 		(len(l.Focus) == 0 || slices.Contains(l.Focus, a) || slices.Contains(l.Focus, b))
+	if ok && l.Top > 0 {
+		_, allowed, err := l.TopSets()
+		ok = err == nil && allowed[a] && allowed[b]
+	}
+	return ok
 }
 
 func samePair(p [2]int, a, b int) bool { return p == [2]int{a, b} || p == [2]int{b, a} }
@@ -365,6 +392,12 @@ func (l *List) validate() error {
 		if err := checkPair(p[0], p[1], known); err != nil {
 			return fmt.Errorf("ignored pair: %w", err)
 		}
+	}
+	switch {
+	case !(l.Top >= 0 && l.Top <= 100):
+		return fmt.Errorf("top mode: %v percent", l.Top)
+	case l.Top > 0 && len(l.Focus) > 0:
+		return errors.New("focus mode and top mode are both on")
 	}
 	if !(l.DrawElo >= 0) || math.IsInf(l.DrawElo, 1) {
 		return fmt.Errorf("draw setting %v", l.DrawElo)

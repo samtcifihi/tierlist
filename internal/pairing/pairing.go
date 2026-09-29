@@ -19,6 +19,9 @@ const (
 	// NewEntryBonus multiplies the score of a pair that includes an entry
 	// with no comparisons yet.
 	NewEntryBonus = 10.0
+	// FavourBonus multiplies a pair's score once for each favoured entry
+	// in it.
+	FavourBonus = 1.5
 	// tieTolerance counts scores this close, relatively, as tied, so that
 	// rounding does not decide between pairs that are really equal.
 	tieTolerance = 1e-9
@@ -35,6 +38,9 @@ type Options struct {
 	// Skip holds pairs of entries never to pick, either way round, though
 	// their comparisons still count.
 	Skip [][2]int
+	// Favour holds entries whose pairs score FavourBonus times higher for
+	// each of them.
+	Favour []int
 }
 
 // ErrNoPair is returned when no pair of entries can be picked.
@@ -72,6 +78,13 @@ func Next(res *bayeselo.Result, history []bayeselo.Comparison, opts Options, rng
 			focused[i] = true
 		}
 	}
+	favoured := make([]int, n)
+	for _, i := range opts.Favour {
+		if i < 0 || i >= n {
+			return 0, 0, fmt.Errorf("pairing: cannot favour entry %d, outside 0 to %d", i, n-1)
+		}
+		favoured[i] = 1
+	}
 	skip := make(map[[2]int]bool, len(opts.Skip))
 	for _, p := range opts.Skip {
 		if p[0] < 0 || p[0] >= n || p[1] < 0 || p[1] >= n {
@@ -97,7 +110,7 @@ func Next(res *bayeselo.Result, history []bayeselo.Comparison, opts Options, rng
 			if p == last || !candidate(i, j) {
 				continue
 			}
-			s := score(res, i, j, perPair[p], perEntry[i] == 0 || perEntry[j] == 0)
+			s := score(res, i, j, perPair[p], perEntry[i] == 0 || perEntry[j] == 0, favoured[i]+favoured[j])
 			switch {
 			case ties == 0 || s > best*(1+tieTolerance):
 				pick, best, ties = p, s, 1
@@ -152,9 +165,10 @@ func Queue(res *bayeselo.Result, history []bayeselo.Comparison, pending [][2]int
 }
 
 // score is a candidate pair's expected information gain, adjusted for
-// earlier comparisons of the pair and for including an uncompared entry.
-func score(res *bayeselo.Result, i, j, repeats int, uncompared bool) float64 {
-	s := res.Gain(i, j) * math.Pow(RepeatPenalty, float64(repeats))
+// earlier comparisons of the pair, for including an uncompared entry, and
+// for how many favoured entries it includes.
+func score(res *bayeselo.Result, i, j, repeats int, uncompared bool, favoured int) float64 {
+	s := res.Gain(i, j) * math.Pow(RepeatPenalty, float64(repeats)) * math.Pow(FavourBonus, float64(favoured))
 	if uncompared {
 		s *= NewEntryBonus
 	}

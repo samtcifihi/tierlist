@@ -182,6 +182,8 @@ func TestLoadRejects(t *testing.T) {
 		{"focus on a removed entry", `{"id":2,"name":"B"}],`, `{"id":2,"name":"B","removed":true}],"focus":[2],`, "focus: entry 2"},
 		{"negative draw setting", `"display"`, `"drawElo":-1,"display"`, "draw setting"},
 		{"ignoring a missing entry", `"display"`, `"ignoredEntries":[7],"display"`, "ignored: there is no entry 7"},
+		{"top mode above 100%", `"display"`, `"top":150,"display"`, "top mode"},
+		{"top mode and focus mode", `"display"`, `"focus":[1],"top":20,"display"`, "both on"},
 		{"ignoring a pair of one entry", `"display"`, `"ignoredPairs":[[1,1]],"display"`, "ignored pair: entry 1 is compared with itself"},
 		{"bad template", `"maxStars":5`, `"maxStars":2`, "display:"},
 		{"bad convention", `"top-closed"`, `"sideways"`, "display:"},

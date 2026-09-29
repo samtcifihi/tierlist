@@ -181,6 +181,12 @@ func TestRating(t *testing.T) {
 	if status, loc := c.answer(base, a, b, n, "a"); status != http.StatusSeeOther || loc != base+"/rate" {
 		t.Fatalf("answering: %d, %s", status, loc)
 	}
+	// The page then says where the two entries now stand: the winner at
+	// the top, the loser at the bottom, the third entry between them.
+	names := map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"}
+	if _, _, _, body := c.question(base); !strings.Contains(body, names[a]+" is now at the 100th percentile, "+names[b]+" at the 0th.") {
+		t.Errorf("no percentiles for the last answer:\n%s", body)
+	}
 	// The same form again, say from a double click, is ignored.
 	if _, loc := c.answer(base, a, b, n, "a"); !strings.Contains(loc, "out-of-date") {
 		t.Errorf("answering twice: %s", loc)
@@ -354,6 +360,15 @@ func TestTierListPage(t *testing.T) {
 	none := c.newList("Empty")
 	if _, body := c.get(none + "/tiers"); !strings.Contains(body, "no entries yet") {
 		t.Errorf("empty tier list:\n%s", body)
+	}
+}
+
+func TestOrdinal(t *testing.T) {
+	for n, want := range map[int]string{0: "0th", 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th",
+		21: "21st", 22: "22nd", 23: "23rd", 92: "92nd", 100: "100th", 101: "101st", 111: "111th"} {
+		if got := ordinal(n); got != want {
+			t.Errorf("ordinal(%d) = %q, want %q", n, got, want)
+		}
 	}
 }
 
@@ -855,6 +870,47 @@ func TestIgnoring(t *testing.T) {
 	}
 }
 
+func TestTopModePage(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+	for k := 1; k < 10; k++ {
+		c.answer(base, k, k+1, k-1, "a")
+	}
+	if _, _, _, body := c.question(base); !strings.Contains(body, `action="/lists/letters/top"`) || !strings.Contains(body, "Start top mode") {
+		t.Errorf("no way to start top mode:\n%s", body)
+	}
+	if _, loc := c.post(base+"/top", url.Values{"top": {"20"}}); loc != base+"/rate" {
+		t.Errorf("starting top mode: %s", loc)
+	}
+	// Every pair shown, now and coming up, is from the top 40%: A to D.
+	a, b, _, body := c.question(base)
+	if a > 4 || b > 4 || !strings.Contains(body, "Top mode: favouring the top 20% of the list, and asking only about the top 40%.") ||
+		strings.Contains(body, "Start top mode") {
+		t.Errorf("in top mode, asked %d vs %d:\n%s", a, b, body)
+	}
+	for _, p := range upcomingShown(body) {
+		for _, name := range p {
+			if name > "D" {
+				t.Errorf("in top mode, %v is coming up", p)
+			}
+		}
+	}
+	for _, bad := range []string{"0", "150", "lots"} {
+		if _, loc := c.post(base+"/top", url.Values{"top": {bad}}); !strings.Contains(loc, "err=") {
+			t.Errorf("top mode on %q: %s", bad, loc)
+		}
+	}
+	if _, loc := c.post(base+"/top", url.Values{"do": {"clear"}}); !strings.Contains(loc, "msg=Top+mode+is+off") || c.load("letters").Top != 0 {
+		t.Errorf("leaving top mode: %s", loc)
+	}
+	// Focus mode turns top mode off.
+	c.post(base+"/top", url.Values{"top": {"20"}})
+	c.post(base+"/focus", url.Values{"focus": {"5"}})
+	if l := c.load("letters"); l.Top != 0 || !slices.Equal(l.Focus, []int{5}) {
+		t.Errorf("after focusing: top %v, focus %v", l.Top, l.Focus)
+	}
+}
+
 func TestTierSizes(t *testing.T) {
 	_, c := start(t, t.TempDir())
 	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
@@ -874,7 +930,7 @@ func TestTierSizes(t *testing.T) {
 	// New lists start with even tiers, and the form offers the other
 	// kinds with their usual numbers filled in.
 	_, body := c.get(base + "/tiers")
-	for _, want := range []string{`<option value="even" selected>Even</option>`, `name="factor" value="1.618"`, `<div class="for-beta" data-wait>`,
+	for _, want := range []string{`<option value="even" selected>Nearest star</option>`, `name="factor" value="1.618033988749895"`, `<div class="for-beta" data-wait>`,
 		`<option value="best" selected>the best tier</option>`, `name="alpha" value="2"`, `name="beta" value="2"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("tier list page lacks %q", want)
@@ -894,16 +950,16 @@ func TestTierSizes(t *testing.T) {
 		!strings.Contains(body, `<option value="geometric" selected>`) {
 		t.Errorf("geometric tier list:\n%s", body)
 	}
-	// Beta(1/2, 1/2) makes the end tiers bigger than even ones: the
-	// cut-offs move from 1/6, 1/2 and 5/6 to about 0.268, 1/2 and 0.732,
-	// so ten entries go 3, 2, 2, 3 instead of 2, 3, 3, 2.
-	display(url.Values{"sizes": {"beta"}, "alpha": {"1/2"}, "beta": {"0.5"}})
-	if tm := c.load("letters").Display.Template; tm.Sizes != "beta" || tm.Alpha != "1/2" || tm.Beta != "0.5" || tm.Factor != "" {
+	// Beta(2, 2) over four equal parts makes the middle tiers bigger: its
+	// CDF, 3x² - 2x³, moves the cut-offs from 1/4, 1/2 and 3/4 to 0.15625,
+	// 1/2 and 0.84375, so ten entries go 2, 3, 3, 2.
+	display(url.Values{"sizes": {"beta"}, "alpha": {"4/2"}, "beta": {"2.0"}})
+	if tm := c.load("letters").Display.Template; tm.Sizes != "beta" || tm.Alpha != "4/2" || tm.Beta != "2.0" || tm.Factor != "" {
 		t.Errorf("saved template %+v", tm)
 	}
-	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "3★ (3): A, B, C\n2★ (2): D, E\n1★ (2): F, G\n0★ (3): H, I, J") ||
-		!strings.Contains(body, `name="alpha" value="1/2"`) {
-		t.Errorf("Beta(1/2, 1/2) tier list:\n%s", body)
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "3★ (2): A, B\n2★ (3): C, D, E\n1★ (3): F, G, H\n0★ (2): I, J") ||
+		!strings.Contains(body, `name="alpha" value="4/2"`) {
+		t.Errorf("Beta(2, 2) tier list:\n%s", body)
 	}
 	for _, bad := range []struct {
 		form url.Values

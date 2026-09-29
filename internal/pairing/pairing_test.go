@@ -86,6 +86,24 @@ func TestNextRejects(t *testing.T) {
 	}
 }
 
+func TestFavour(t *testing.T) {
+	// With no answers every pair scores the same, so favouring entry 2 puts
+	// it in every pair picked, and favouring 2 and 3 picks that pair.
+	res := fit(t, 5, nil)
+	for s := range 20 {
+		rng := rand.New(rand.NewPCG(uint64(s), 3))
+		if p := next(t, res, nil, Options{Favour: []int{2}}, rng); p[0] != 2 && p[1] != 2 {
+			t.Errorf("favouring 2, picked %v", p)
+		}
+		if p := next(t, res, nil, Options{Favour: []int{2, 3}}, rng); key(p[0], p[1]) != [2]int{2, 3} {
+			t.Errorf("favouring 2 and 3, picked %v", p)
+		}
+	}
+	if _, _, err := Next(res, nil, Options{Favour: []int{5}}, rand.New(rand.NewPCG(1, 1))); err == nil {
+		t.Error("favouring a missing entry: want an error")
+	}
+}
+
 func TestSkip(t *testing.T) {
 	res := fit(t, 3, nil)
 	// With 0–1 and 0–2 skipped, 1–2 is all that is left, even straight
@@ -143,13 +161,13 @@ func TestPicksBestScore(t *testing.T) {
 		for i := range truth {
 			for j := i + 1; j < len(truth); j++ {
 				if p := [2]int{i, j}; p != last {
-					best = max(best, score(res, i, j, perPair[p], perEntry[i] == 0 || perEntry[j] == 0))
+					best = max(best, score(res, i, j, perPair[p], perEntry[i] == 0 || perEntry[j] == 0, 0))
 				}
 			}
 		}
 		p := next(t, res, h, Options{}, rng)
 		k := key(p[0], p[1])
-		got := score(res, k[0], k[1], perPair[k], perEntry[k[0]] == 0 || perEntry[k[1]] == 0)
+		got := score(res, k[0], k[1], perPair[k], perEntry[k[0]] == 0 || perEntry[k[1]] == 0, 0)
 		if k == last || got < best*(1-tieTolerance) {
 			t.Errorf("trial %d: picked %v scoring %g; best score is %g, last pair %v", trial, k, got, best, last)
 		}

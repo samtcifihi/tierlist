@@ -146,6 +146,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/remove", s.withList(s.removeEntry))
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/restore", s.withList(s.restoreEntry))
 	mux.HandleFunc("POST /lists/{list}/focus", s.withList(s.setFocus))
+	mux.HandleFunc("POST /lists/{list}/top", s.withList(s.setTop))
 	mux.HandleFunc("GET /lists/{list}/tiers", s.withList(s.tiers))
 	mux.HandleFunc("POST /lists/{list}/display", s.withList(s.setDisplay))
 	mux.HandleFunc("GET /lists/{list}/answers", s.withList(s.answers))

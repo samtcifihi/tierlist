@@ -127,6 +127,7 @@ func (l *List) encode() ([]byte, error) {
 		{key: "entries", value: l.Entries, lines: true},
 		{key: "comparisons", value: l.Comparisons, lines: true},
 		{key: "focus", value: l.Focus, skip: len(l.Focus) == 0},
+		{key: "top", value: l.Top, skip: l.Top == 0},
 		{key: "ignoredEntries", value: l.IgnoredEntries, skip: len(l.IgnoredEntries) == 0},
 		{key: "ignoredPairs", value: l.IgnoredPairs, skip: len(l.IgnoredPairs) == 0},
 		{key: "display", value: l.Display},

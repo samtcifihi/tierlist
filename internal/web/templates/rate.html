@@ -9,9 +9,18 @@
   </form>
 </div>
 {{end}}
+{{with .TopMode}}
+<div class="note focus-banner">
+  <span>{{.}}</span>
+  <form method="post" action="{{$.List.URL}}/top">
+    <input type="hidden" name="do" value="clear">
+    <button class="subtle">Leave top mode</button>
+  </form>
+</div>
+{{end}}
 {{if .NothingLeft}}
 <h1>Rate</h1>
-<p>Every pair left to ask is ignored{{if .Focus}}, among the pairs focus mode allows{{end}}. Reset ignores to ask about them all again{{if .Undo}}, or undo the last one{{end}}.</p>
+<p>Every pair left to ask is ignored{{if .Focus}}, among the pairs focus mode allows{{end}}{{if .TopMode}}, among the pairs top mode allows{{end}}. Reset ignores to ask about them all again{{if .Undo}}, or undo the last one{{end}}.</p>
 <form method="post" action="{{.List.URL}}/ignores/reset">
   <input type="hidden" name="from" value="rate">
   <button class="primary">Reset ignores</button>
@@ -64,8 +73,15 @@
     <button class="subtle" data-keys="u U Backspace">Undo: {{.}} <kbd>U</kbd></button>
   </form>
   {{end}}
+  {{with .Last}}<p class="muted small">{{.}}</p>{{end}}
   {{if .Ready}}
   <p class="muted small"><a class="muted" href="{{.List.URL}}/answers">{{plural .Answers "answer" "answers"}}</a> · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{with .Levels}} · {{.}}{{end}}</p>
+  {{if not .TopMode}}
+  <form method="post" action="{{.List.URL}}/top" class="inline top-start">
+    <label class="muted small">Favour the top <input type="number" name="top" min="1" max="100" step="any" value="20" required> %</label>
+    <button class="subtle">Start top mode</button>
+  </form>
+  {{end}}
   {{end}}
 </div>
 {{end}}

@@ -167,6 +167,8 @@ dialog.confirm .actions { justify-content: flex-end; margin: 1.25rem 0 0; }
 .same { align-self: center; display: flex; flex-direction: column; align-items: center; gap: .4rem; }
 .key { font-size: .8rem; font-weight: 400; color: var(--muted); }
 .below { text-align: center; margin-top: 1.5rem; }
+.top-start { justify-content: center; }
+.top-start input { width: 4.5rem; padding: .15rem .4rem; }
 .pair > .upcoming, .pair > .question, .pair > .ignores { grid-column: 1 / -1; }
 .ignores { display: grid; grid-template-columns: subgrid; align-items: start; }
 .ignores button { justify-self: center; font-size: .85rem; overflow-wrap: anywhere; }

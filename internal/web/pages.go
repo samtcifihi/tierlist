@@ -159,6 +159,8 @@ type rateView struct {
 	Upcoming      []upcomingPair // the pairs coming up, the last one next
 	Token         int            // see token
 	Undo          string         // the answer or ignore Undo would take back
+	Last          string         // where the entries of the latest answer now stand
+	TopMode       string         // top mode in words, while it is on
 	Answers       int
 	Draw          string // the draw setting, as a percentage
 	Levels        string
@@ -183,6 +185,10 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 		v.Undo = describeIgnore(d, names)
 	} else if k := len(l.Comparisons); k > 0 {
 		v.Undo = describe(l.Comparisons[k-1], names)
+	}
+	v.Last = lastPercentiles(l, names)
+	if l.Top > 0 {
+		v.TopMode = topText(l.Top)
 	}
 	if len(l.Shown()) >= 2 {
 		err := s.fillQueue(ol)
@@ -344,6 +350,87 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request, ol *openList) {
 	ol.queue = append([][2]int{{a, b}}, ol.queue...)
 	ol.queue = ol.queue[:min(len(ol.queue), 1+upcoming)]
 	back(w, r, rate, msg, "")
+}
+
+// topText describes top mode for the top p percent.
+func topText(p float64) string {
+	pct := func(x float64) string { return strconv.FormatFloat(x, 'f', -1, 64) + "%" }
+	if 2*p >= 100 {
+		return "Top mode: favouring the top " + pct(p) + " of the list."
+	}
+	return "Top mode: favouring the top " + pct(p) + " of the list, and asking only about the top " + pct(2*p) + "."
+}
+
+// setTop turns top mode on for the percentage given as top, or off with
+// do=clear.
+func (s *Server) setTop(w http.ResponseWriter, r *http.Request, ol *openList) {
+	rate := listURL(ol.key) + "/rate"
+	p := 0.0
+	if r.FormValue("do") != "clear" {
+		v, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("top")), 64)
+		if err != nil || !(v > 0 && v <= 100) {
+			back(w, r, rate, "", "top mode needs a percentage above 0 and at most 100")
+			return
+		}
+		p = v
+	}
+	if err := ol.list.SetTop(p); err != nil {
+		back(w, r, rate, "", err.Error())
+		return
+	}
+	if !s.saved(w, ol) {
+		return
+	}
+	ol.replan()
+	if p == 0 {
+		back(w, r, rate, "Top mode is off.", "")
+		return
+	}
+	back(w, r, rate, "", "")
+}
+
+// lastPercentiles says what percentile the entries of the latest answer
+// are now at, as in "Alien is now at the 92nd percentile, Brazil at the
+// 45th.", leaving out removed ones.
+func lastPercentiles(l *tierlist.List, names map[int]string) string {
+	k := len(l.Comparisons)
+	if k == 0 {
+		return ""
+	}
+	pct, err := l.Percentiles()
+	if err != nil {
+		return ""
+	}
+	c := l.Comparisons[k-1]
+	var parts []string
+	for _, id := range []int{c.A, c.B} {
+		if p, ok := pct[id]; ok {
+			if len(parts) == 0 {
+				parts = append(parts, fmt.Sprintf("%s is now at the %s percentile", names[id], ordinal(int(math.Round(p)))))
+			} else {
+				parts = append(parts, fmt.Sprintf("%s at the %s", names[id], ordinal(int(math.Round(p)))))
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ") + "."
+}
+
+// ordinal writes n as "1st", "2nd", "3rd", "4th", "11th" and so on.
+func ordinal(n int) string {
+	suffix := "th"
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		suffix = "st"
+	case n%10 == 2:
+		suffix = "nd"
+	case n%10 == 3:
+		suffix = "rd"
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 // lastIgnore returns the latest thing the rating page did, if that was an
@@ -656,7 +743,7 @@ type displayForm struct {
 func formFor(d tierlist.Display) displayForm {
 	f := displayForm{
 		Kind: d.Template.Kind, MaxStars: "10", Divisions: "1", CustomName: "Custom",
-		Sizes: "even", Factor: "1.618", From: "best", Alpha: "2", Beta: "2",
+		Sizes: "even", Factor: strconv.FormatFloat(math.Phi, 'g', -1, 64), From: "best", Alpha: "2", Beta: "2",
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
 		GroupRule: d.GroupRule, Prefer: d.Prefer,
 	}

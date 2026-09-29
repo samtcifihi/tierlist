@@ -11,7 +11,7 @@ This project uses [just](https://github.com/casey/just), not make.
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
 - **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
-- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)).
+- **Rate:** shows two entries and asks which is better, with the next 4 pairs stacked smaller above them. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer. <kbd>4</kbd>, <kbd>5</kbd> and <kbd>6</kbd> ignore the first entry, the pair or the second entry instead of answering (see [Ignoring](#ignoring)). Below, a quiet line says what percentile the two entries of the latest answer are now at, and **Start top mode** narrows the pairs to the best entries (see [Top mode](#top-mode)).
 - **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Ignored entries are marked, and **Reset ignores** asks about everything again. The list itself can be renamed, reset or deleted at the bottom. Resetting deletes every answer but keeps the entries, whose ratings start over at 1500; like deleting, it asks first in a dialog, since it can't be undone. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy. Each tier shows how many entries landed in it, as in "10★ (2)".
 - **Answers:** every answer so far in a table, newest first and numbered in the order given: the entry judged better, `>`, and the other entry, or both entries with `≈` between them for "about the same". Under "Filter by entry", tick entries and choose whether to see the answers involving any of them or only the answers between two of them (which needs at least two ticked). An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
@@ -147,6 +147,7 @@ Under the usual Gaussian approximation of the ratings, the expected information 
 - **Repeats:** ½ for each earlier comparison of the same pair. The same pair is also not presented twice in a row unless no other pair is available; repeats are otherwise allowed. Each comparison already lowers the pair's uncertainty, but the model treats every answer as independent, while a user who remembers an earlier answer gives less new information than the model expects.
 - **Uncompared entries:** 10 for a pair that includes an entry with no comparisons yet, so every entry gets compared at least once. (Such entries already score high, since only the prior constrains them.) In practice, uncompared entries pair up with each other first, so every entry of a new list has been compared once after about half as many answers as there are entries.
 - **Sides:** the two entries are shown in random order, so a habit of picking one side does not skew the ratings.
+- **Top mode:** 1.5 for each entry in the pair that top mode favours (see below).
 
 The factors are tuning details and may change.
 
@@ -154,13 +155,26 @@ The factors are tuning details and may change.
 
 The user can choose a set of entries to focus on, for example entries added after a lot of rating has already been done. Until the user switches back to the default mode, only pairs that include at least one of those entries are scored and presented. Focus mode is saved with the list, so it stays on across sessions.
 
+#### Top mode
+
+To sort out the best entries, the user can start **top mode** for a percentage `p`, from the rating page. An entry's **percentile** is its place in the list as the tier list orders it: 100 for the best entry, 0 for the worst, evenly spaced between, as tier templates place entries. Top mode then:
+
+- favours the top `p` percent (entries at or above the `100 - p`th percentile): pairs score 1.5 times higher for each of them, on top of the usual adjustments, so they come up more often without anything else being ruled out; and
+- asks only about the top `2p` percent: both entries of every pair are at or above the `100 - 2p`th percentile, which from `p = 50` up is every entry. The two best entries always count, so there is always a pair, and so does any entry with no answers yet, since its rating says nothing so far.
+
+As answers move entries up and down, the sets move with them, and a pair lined up in the stack that no longer fits is dropped. Top mode and focus mode are never on together: starting one leaves the other. Top mode is saved with the list.
+
+In simulations, top mode on 20% sorts out the top better: with 30 entries and 90 answers, it left a fifth fewer of the true top 6 outside the fitted top 6 than the default mode did, and put slightly fewer pairs among them in the wrong order (with 50 entries and 250 answers, an eighth fewer and a little fewer). Nearly all of that comes from asking only about the top `2p` percent. Favouring more strongly would seem to help more, but it doesn't: it spends the answers on whichever entries look best so far and misses better ones rated low early. A factor of 3 kept only about half the gain, and 9 lost all of it, so the favouring is kept mild.
+
+The rating page also shows, quietly, the percentiles the two entries of the latest answer are now at.
+
 #### Coming up
 
 The rating page also shows the next 4 pairs, small enough to take in at a glance, stacked above the pair being asked with the next one nearest and the later ones fading. A pair, once shown, stays lined up until it is asked, so the stack can be trusted: after each answer it moves down one, and one new pair joins at the top. Undo puts the answered pair back in front.
 
 Lined-up pairs are chosen before the answers to the pairs ahead of them are known. Each one counts as asked with its answer still unknown: it narrows the ratings' uncertainty by the information it is expected to carry (a rank-one update of their covariance) and counts toward repeats and the new-entry bonus, so the next pair looks elsewhere. The ratings themselves wait for real answers. Choosing 4 pairs ahead costs little: in simulated sessions with 20 entries and 60 answers, 16.6% of pairs ended up in the wrong order, against 16.2% when each pair is chosen just before it is asked and 19.0% with random pairs.
 
-Adding, removing or restoring entries, and switching focus mode on or off, choose the pairs coming up again. The pair being asked stays, unless it no longer fits.
+Adding, removing or restoring entries, and switching focus mode or top mode on or off, choose the pairs coming up again. The pair being asked stays, unless it no longer fits.
 
 ### Session state
 
@@ -181,6 +195,7 @@ A list file holds:
 - the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes
 - every answer, in order: the IDs of the entry shown first (`a`) and second (`b`), and the answer (`"a"`, `"b"` or `"same"`)
 - the focus set, while focus mode is on
+- the top mode percentage, while top mode is on
 - the ignored entries and pairs, until they are reset
 - the display options, with the draw-margin in the points the pages show
 - each entry's last fitted rating and the last draw setting, in Elo as the model has them (ratings relative to the dummy at 0, not the points the pages show), which only speed up the next fit
@@ -295,9 +310,9 @@ The tiers run from the maximum number of stars down to the lowest tier in steps 
 
 The user does not enter cut-offs or ranges; they are generated, in one of three ways the user chooses (the **tier sizes**):
 
-- **Even** (the default): the top and bottom tiers each cover `1/(2*(n-1))` of `[0, 1]` and every other tier covers `1/(n-1)`, so the cut-offs are at `(2k-1)/(2*(n-1))` for `k = 1, ..., n-1`. Each entry gets the star rating nearest its position.
-- **Geometric**: each tier is a fixed factor (1.618 unless the user picks another number above 0) times the size of the one before it, counting from the best tier, or from the worst if the user chooses. Above 1 the tiers grow away from where the counting starts, so by default the best tier is the smallest; below 1 they shrink; exactly 1 makes every tier the same size. The sizes are scaled to add up to 1, so any number of tiers, with any factor, covers `[0, 1]` exactly with the same ratio between every pair of neighbours.
-- **Beta**: two parameters, α and β, above 0. Each tier gets the share of a Beta(α, β) distribution that lies over its even tier: each even cut-off `c` moves to the distribution's CDF at `c`. The distribution lives on `(0, 1)`, but the tiers still cover all of `[0, 1]`, ends included. Beta(1, 1) is the uniform distribution and gives exactly the even tiers; Beta(2, 2) makes the middle tiers bigger and the end tiers smaller, and Beta(½, ½) the other way round. A larger α makes the tiers near the top bigger, a larger β those near the bottom. When α = β the tiers are exactly symmetric.
+- **Nearest star** (the default): the top and bottom tiers each cover `1/(2*(n-1))` of `[0, 1]` and every other tier covers `1/(n-1)`, so the cut-offs are at `(2k-1)/(2*(n-1))` for `k = 1, ..., n-1`. Each entry gets the star rating nearest its position.
+- **Geometric**: each tier is a fixed factor (φ, the golden ratio, 1.618033988749895 to the precision of a 64-bit float, unless the user picks another number above 0) times the size of the one before it, counting from the best tier, or from the worst if the user chooses. Above 1 the tiers grow away from where the counting starts, so by default the best tier is the smallest; below 1 they shrink; exactly 1 makes every tier the same size. The sizes are scaled to add up to 1, so any number of tiers, with any factor, covers `[0, 1]` exactly with the same ratio between every pair of neighbours.
+- **Beta**: two parameters, α and β, above 0. Cut `[0, 1]` into `n` equal parts; each tier gets the share of a Beta(α, β) distribution that lies over its part, so each cut-off `k/n` moves to the distribution's CDF at `k/n`. The distribution lives on `(0, 1)`, but the tiers still cover all of `[0, 1]`, ends included. Beta(1, 1) is the uniform distribution and gives tiers all exactly the same size (unlike nearest-star tiers, whose ends are half size); Beta(2, 2) makes the middle tiers bigger and the end tiers smaller, and Beta(½, ½) the other way round. A larger α makes the tiers near the top bigger, a larger β those near the bottom. When α = β the tiers are exactly symmetric.
 
 The factor, α and β can be written as decimals or fractions, such as `1.618` or `1/2`. Extreme settings can make some tiers too small to hold any position but the end of `[0, 1]` they touch; they are kept, tiny and in order, rather than refused.
 

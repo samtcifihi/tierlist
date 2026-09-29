@@ -115,19 +115,20 @@ func TestBetaTiers(t *testing.T) {
 		t.Helper()
 		return mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: a, Beta: b}}, TopClosed)
 	}
-	// Beta(1, 1) is uniform, so it gives exactly the even tiers.
+	// Beta(1, 1) is uniform, so it gives the six tiers of 0–5 stars the
+	// same size exactly: cut-offs at 1/6, 2/6, ... 5/6.
 	for k, c := range beta(1, 1).Cutoffs {
-		if c.Cmp(even.Cutoffs[k]) != 0 {
-			t.Errorf("Beta(1, 1) cut-off %d is %s, want %s", k, c.RatString(), even.Cutoffs[k].RatString())
+		if want := big.NewRat(int64(k+1), 6); c.Cmp(want) != 0 {
+			t.Errorf("Beta(1, 1) cut-off %d is %s, want %s", k, c.RatString(), want.RatString())
 		}
 	}
-	// Each cut-off is the distribution's CDF at the even one: for Beta(2, 2)
-	// that is 3x² - 2x³, so 0.028 at 0.1. Symmetric parameters give
+	// Each cut-off is the distribution's CDF at the equal one: for Beta(2, 2)
+	// that is 3x² - 2x³, so 2/27 at 1/6. Symmetric parameters give
 	// cut-offs exactly symmetric about 1/2, and middle tiers bigger than
-	// even ones, where Beta(½, ½) makes the end tiers bigger instead.
+	// equal ones, where Beta(½, ½) makes the end tiers bigger instead.
 	b22, half := beta(2, 2), beta(0.5, 0.5)
-	if c := ratFloat(b22.Cutoffs[0]); math.Abs(c-0.028) > 1e-15 {
-		t.Errorf("Beta(2, 2) first cut-off %g, want 0.028", c)
+	if c := ratFloat(b22.Cutoffs[0]); math.Abs(c-2.0/27) > 1e-15 {
+		t.Errorf("Beta(2, 2) first cut-off %g, want 2/27", c)
 	}
 	for _, tmpl := range []Template{b22, half} {
 		n := len(tmpl.Cutoffs)
@@ -137,14 +138,19 @@ func TestBetaTiers(t *testing.T) {
 			}
 		}
 	}
-	ew, w22, wh := widths(even), widths(b22), widths(half)
-	if !(w22[0] < ew[0] && w22[2] > ew[2] && wh[0] > ew[0] && wh[2] < ew[2]) {
-		t.Errorf("tier sizes, bottom first: even %v, Beta(2, 2) %v, Beta(½, ½) %v", ew, w22, wh)
+	equal := 1.0 / 6
+	w22, wh := widths(b22), widths(half)
+	if !(w22[0] < equal && w22[2] > equal && wh[0] > equal && wh[2] < equal) {
+		t.Errorf("tier sizes, bottom first: Beta(2, 2) %v, Beta(½, ½) %v", w22, wh)
 	}
 	// A larger α makes the tiers near the top bigger, a larger β those near
 	// the bottom.
-	if top := widths(beta(5, 2)); !(top[5] > ew[5] && top[0] < ew[0]) {
+	if top := widths(beta(5, 2)); !(top[5] > equal && top[0] < equal) {
 		t.Errorf("Beta(5, 2) tier sizes, bottom first: %v", top)
+	}
+	// Unlike the nearest-star sizes, the end tiers aren't halved.
+	if w := widths(beta(1, 1)); w[0] == widths(even)[0] {
+		t.Errorf("Beta(1, 1) bottom tier %g, the same as the nearest-star one", w[0])
 	}
 	for _, bad := range [][2]float64{{0, 1}, {1, -2}, {math.NaN(), 1}, {1, 2e6}} {
 		if _, err := Stars(StarOptions{Max: 5, Sizes: Sizes{Kind: BetaTiers, Alpha: bad[0], Beta: bad[1]}}, TopClosed); err == nil {

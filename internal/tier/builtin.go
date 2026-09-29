@@ -33,8 +33,8 @@ const (
 	// GeometricTiers grow or shrink by a constant factor from one tier to
 	// the next.
 	GeometricTiers
-	// BetaTiers each get the share of a Beta distribution that falls
-	// where the even tier would be.
+	// BetaTiers each get the share of a Beta distribution that falls on
+	// their part of [0, 1] cut into n equal parts.
 	BetaTiers
 )
 
@@ -49,7 +49,7 @@ type Sizes struct {
 	// Alpha and Beta, for BetaTiers, are the parameters of the Beta
 	// distribution, both above 0. A larger Alpha makes the tiers near the
 	// top bigger, a larger Beta those near the bottom, and 1 and 1 give
-	// even tiers.
+	// tiers all the same size.
 	Alpha, Beta float64
 }
 
@@ -112,7 +112,11 @@ func (s Sizes) cutoffs(n int) ([]*big.Rat, error) {
 	case GeometricTiers:
 		return s.geometric(n)
 	case BetaTiers:
-		return s.beta(even)
+		equal := make([]*big.Rat, n-1)
+		for k := range equal {
+			equal[k] = big.NewRat(int64(k+1), int64(n))
+		}
+		return s.beta(equal)
 	}
 	return nil, fmt.Errorf("unknown kind of tier sizes %d", s.Kind)
 }
@@ -162,29 +166,29 @@ func (s Sizes) geometric(n int) ([]*big.Rat, error) {
 }
 
 // beta returns the cut-offs of tiers that each get the share of a
-// Beta(Alpha, Beta) distribution lying over the even tier: the
-// distribution's CDF at each even cut-off. Beta(1, 1) is uniform, so it
-// gives the even cut-offs exactly; a symmetric distribution gives
-// cut-offs exactly symmetric about 1/2.
-func (s Sizes) beta(even []*big.Rat) ([]*big.Rat, error) {
+// Beta(Alpha, Beta) distribution lying over their part of [0, 1] cut into
+// equal parts, whose cut-offs are equal: the distribution's CDF at each
+// of those. Beta(1, 1) is uniform, so it gives equal tiers exactly; a
+// symmetric distribution gives cut-offs exactly symmetric about 1/2.
+func (s Sizes) beta(equal []*big.Rat) ([]*big.Rat, error) {
 	for _, p := range []float64{s.Alpha, s.Beta} {
 		if !(p > 0) || p > maxBetaParam {
 			return nil, fmt.Errorf("the Beta distribution's α and β must be numbers above 0 and at most %g, not %v", float64(maxBetaParam), p)
 		}
 	}
 	if s.Alpha == 1 && s.Beta == 1 {
-		return even, nil
+		return equal, nil
 	}
 	half := big.NewRat(1, 2)
-	below, above := make([]float64, len(even)), make([]float64, len(even))
-	for k, e := range even {
+	below, above := make([]float64, len(equal)), make([]float64, len(equal))
+	for k, e := range equal {
 		if s.Alpha == s.Beta && e.Cmp(half) == 0 {
 			below[k], above[k] = 0.5, 0.5
 			continue
 		}
-		// 1 - e is the even cut-off k places from the other end, exactly.
+		// 1 - e is the cut-off k places from the other end, exactly.
 		below[k] = betaCDF(ratFloat(e), s.Alpha, s.Beta)
-		above[k] = betaCDF(ratFloat(even[len(even)-1-k]), s.Beta, s.Alpha)
+		above[k] = betaCDF(ratFloat(equal[len(equal)-1-k]), s.Beta, s.Alpha)
 	}
 	return fromShares(below, above)
 }
