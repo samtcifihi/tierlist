@@ -20,6 +20,11 @@ const MinDrawMargin = 10 * bayeselo.Precision
 // section).
 type Display struct {
 	Template Template `json:"template"`
+	// Others holds the options last chosen for the kinds of template not
+	// in use, at most one of each kind that has options, so that switching
+	// back to one finds them as they were (see Remembered). They are
+	// checked only once put to use.
+	Others []Template `json:"others,omitempty"`
 	// Convention is "top-closed" or "bottom-closed".
 	Convention string `json:"convention"`
 	// DrawMargin groups entries whose ratings differ by at most this many
@@ -71,13 +76,42 @@ func DefaultDisplay() Display {
 }
 
 // Check reports whether the options describe a usable template and
-// placement.
+// placement, and keep at most one set of options for each other kind of
+// template.
 func (d Display) Check() error {
 	if _, err := d.template(); err != nil {
 		return err
 	}
+	seen := map[string]bool{d.Template.Kind: true}
+	for _, t := range d.Others {
+		switch {
+		case !slices.Contains(OptionKinds, t.Kind):
+			return fmt.Errorf("options kept for templates of unknown kind %q", t.Kind)
+		case seen[t.Kind]:
+			return fmt.Errorf("two sets of options for %s templates", t.Kind)
+		}
+		seen[t.Kind] = true
+	}
 	_, err := d.options()
 	return err
+}
+
+// OptionKinds are the kinds of template that have options to remember.
+var OptionKinds = []string{"stars", "named", "custom"}
+
+// Remembered returns the options last chosen for templates of the given
+// kind: the template in use, if it is of that kind, or else the options
+// kept in Others. It reports false if there are none.
+func (d Display) Remembered(kind string) (Template, bool) {
+	if d.Template.Kind == kind {
+		return d.Template, true
+	}
+	for _, t := range d.Others {
+		if t.Kind == kind {
+			return t, true
+		}
+	}
+	return Template{}, false
 }
 
 // A Shape is how a display's tier template shares out [0, 1] among its

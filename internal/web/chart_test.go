@@ -128,7 +128,7 @@ func TestChartPage(t *testing.T) {
 	if status != http.StatusOK || !strings.Contains(body, "<strong>Not applied yet:</strong>") || !strings.Contains(body, "The Beta(0.5, 0.5) density.") {
 		t.Errorf("chart of Beta(1/2, 1/2): %d\n%s", status, body)
 	}
-	status, body = chart(url.Values{"kind": {"custom"}, "tierNames": {"Top\nRest"}, "customCutoffs": {"0.9"}})
+	status, body = chart(url.Values{"kind": {"custom"}, "customTiers": {"Top\nRest"}, "customCutoffs": {"0.9"}})
 	if status != http.StatusOK || !strings.Contains(body, "<title>Rest: 90% of the list</title>") || !strings.Contains(body, "Not applied yet") {
 		t.Errorf("chart of a custom template: %d\n%s", status, body)
 	}
@@ -138,7 +138,7 @@ func TestChartPage(t *testing.T) {
 		{"sizes": {"beta"}, "alpha": {"1/"}, "beta": {"2"}},
 		{"maxStars": {"2"}},
 		{"kind": {"custom"}},
-		{"kind": {"custom"}, "tierNames": {"A\nB"}, "customCutoffs": {"2"}},
+		{"kind": {"custom"}, "customTiers": {"A\nB"}, "customCutoffs": {"2"}},
 		{"sizes": {"geometric"}, "factor": {"-1"}},
 		{"convention": {"sideways"}},
 	} {

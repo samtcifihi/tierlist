@@ -2,7 +2,7 @@ package web
 
 import (
 	"cmp"
-	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -553,8 +553,8 @@ type entriesView struct {
 	Removed  []entryRow
 	Focus    bool
 	Ignoring string // what is ignored, in words, or ""
-	CSV      string // the shown entries as CSV, to copy
-	CSVRows  int    // lines for its text box, with room for a scroll bar
+	JSON     string // the shown entries as JSON, to copy
+	JSONRows int    // lines for its text box, with room for a scroll bar
 	Answers  int
 	Reset    confirm
 	Delete   confirm
@@ -605,25 +605,44 @@ func (s *Server) showEntries(w http.ResponseWriter, r *http.Request, ol *openLis
 	}
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
 	v.Ignoring = ignoring(l)
-	v.CSV, v.CSVRows = entriesCSV(v.Shown, fit), min(len(v.Shown)+2, 20)
+	v.JSON, v.JSONRows = entriesJSON(v.Shown), min(len(v.Shown)+3, 20)
 	if errText != "" {
 		v.Error = errText
 	}
 	s.render(w, status, "entries", v)
 }
 
-// entriesCSV writes the rows as CSV under a header row: each entry's name,
-// its rating and the ± uncertainty of it (one standard deviation), in
-// points as the page shows them, and its number of answers.
-func entriesCSV(rows []entryRow, fit *tierlist.Fit) string {
-	var b strings.Builder
-	w := csv.NewWriter(&b)
-	w.Write([]string{"entry name", "rating", "CI width", "number of answers"})
-	for _, r := range rows {
-		w.Write([]string{r.Name, r.Rating, fmt.Sprintf("%.0f", fit.PointsSD(r.ID)), strconv.Itoa(r.Answers)})
+// An entryJSON is an entry as the entries box writes it: its rating and
+// the ± uncertainty of it (one standard deviation) are in points, as the
+// page shows them.
+type entryJSON struct {
+	Name        string `json:"name"`
+	Rating      int    `json:"rating"`
+	CIWidth     int    `json:"ciWidth"`
+	Answers     int    `json:"answers"`
+	URL         string `json:"url,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// entriesJSON writes the rows as a JSON list, one entry a line (see
+// entryJSON). The box for adding entries takes the text back, so it can
+// add them to another list.
+func entriesJSON(rows []entryRow) string {
+	lines := make([]string, len(rows))
+	for i, r := range rows {
+		e := entryJSON{Name: r.Name, Answers: r.Answers, URL: r.URL, Description: r.Description}
+		e.Rating, _ = strconv.Atoi(r.Rating)
+		e.CIWidth, _ = strconv.Atoi(strings.TrimPrefix(r.SD, "± "))
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false) // "Films & shows", not "Films \u0026 shows"
+		enc.Encode(e)            // writing to a strings.Builder cannot fail
+		lines[i] = "  " + strings.TrimSuffix(b.String(), "\n")
 	}
-	w.Flush() // writing to a strings.Builder cannot fail
-	return b.String()
+	if len(lines) == 0 {
+		return "[]"
+	}
+	return "[\n" + strings.Join(lines, ",\n") + "\n]"
 }
 
 // ignoring says what the list ignores, as in "Ignoring Alien and Brazil,
@@ -646,15 +665,15 @@ func ignoring(l *tierlist.List) string {
 	return ""
 }
 
-// addEntries adds the entries in the box, one a line (see
-// parseEntryLines). A title already in the list updates that entry
-// instead, with the details the line gives, so it keeps its answers. If a
-// line can't be read, nothing changes, and the page shows the text again
-// to fix.
+// addEntries adds the entries in the box, one title a line or as JSON (see
+// parseEntries). A name already in the list updates that entry instead,
+// with the details the box gives, so it keeps its answers. If the box
+// can't be read, nothing changes, and the page shows the text again to
+// fix.
 func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
 	text := r.FormValue("names")
-	lines, err := parseEntryLines(text)
+	lines, err := parseEntries(text)
 	if err != nil {
 		s.showEntries(w, r, ol, text, sentence(err.Error()), http.StatusBadRequest)
 		return
@@ -676,10 +695,10 @@ func (s *Server) addEntries(w http.ResponseWriter, r *http.Request, ol *openList
 		}
 		e := l.Entries[slices.IndexFunc(l.Entries, func(e tierlist.Entry) bool { return e.ID == id })]
 		url, description := e.URL, e.Description
-		if line.given > 1 {
+		if line.hasURL {
 			url = line.url
 		}
-		if line.given > 2 {
+		if line.hasDescription {
 			description = line.description
 		}
 		if url == e.URL && description == e.Description {
@@ -839,46 +858,94 @@ type tierRow struct {
 // Label is the tier's name with how many entries it holds.
 func (r tierRow) Label() string { return fmt.Sprintf("%s (%d)", r.Name, len(r.Entries)) }
 
-// displayForm holds the display options as the form shows them.
+// displayForm holds the display options as the form shows them. Each kind
+// of template has its own fields, filled in with the options it last had,
+// so that switching kinds and back finds them as they were.
 type displayForm struct {
 	Kind          string
 	MaxStars      string
 	SkipZero      bool
 	Divisions     string
-	Sizes         string
-	Factor        string
-	From          string
-	Alpha         string
-	Beta          string
+	Stars         sizesForm // the tier sizes of stars
+	NamedTiers    string
+	Named         sizesForm // the tier sizes of named tiers
 	CustomName    string
-	TierNames     string // for named tiers and custom templates
+	CustomTiers   string
 	CustomCutoffs string
-	Convention    string
-	DrawMargin    string
-	GroupRule     string
-	Prefer        string
+	// NamedReady and CustomReady report that the fields for those kinds
+	// make a usable template, so that choosing one applies it at once
+	// rather than waiting for more to be filled in.
+	NamedReady  bool
+	CustomReady bool
+	Convention  string
+	DrawMargin  string
+	GroupRule   string
+	Prefer      string
 }
 
+// A sizesForm holds tier sizes as the form shows them, for a kind of
+// template that has them.
+type sizesForm struct {
+	Prefix  string // before each field's name: "" for stars, "named-" for named tiers
+	Nearest string // what an entry gets with the default sizes, in words
+	Sizes   string
+	Factor  string
+	From    string
+	Alpha   string
+	Beta    string
+}
+
+// newSizesForm returns the default tier sizes, for the fields named with
+// prefix.
+func newSizesForm(prefix string) sizesForm {
+	f := sizesForm{Prefix: prefix, Nearest: "nearest star", Sizes: "even",
+		Factor: strconv.FormatFloat(math.Phi, 'g', -1, 64), From: "best", Alpha: "2", Beta: "2"}
+	if prefix != "" {
+		f.Nearest = "nearest tier, as if the tiers stood evenly spaced from worst to best"
+	}
+	return f
+}
+
+// fill shows the tier sizes t chooses, keeping the defaults for the
+// numbers it doesn't use.
+func (f *sizesForm) fill(t tierlist.Template) {
+	f.Sizes = cmp.Or(t.Sizes, "even")
+	f.Factor, f.From, f.Alpha, f.Beta = cmp.Or(t.Factor, f.Factor), cmp.Or(t.From, f.From), cmp.Or(t.Alpha, f.Alpha), cmp.Or(t.Beta, f.Beta)
+}
+
+// formFor fills the form in with the display options: for each kind of
+// template, the options it last had, or else the defaults.
 func formFor(d tierlist.Display) displayForm {
 	f := displayForm{
 		Kind: d.Template.Kind, MaxStars: "10", Divisions: "1", CustomName: "Custom",
-		Sizes: "even", Factor: strconv.FormatFloat(math.Phi, 'g', -1, 64), From: "best", Alpha: "2", Beta: "2",
+		Stars: newSizesForm(""), Named: newSizesForm("named-"),
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
 		GroupRule: d.GroupRule, Prefer: d.Prefer,
 	}
-	t := d.Template
-	switch t.Kind {
-	case "stars":
+	if t, ok := d.Remembered("stars"); ok {
 		f.MaxStars, f.SkipZero, f.Divisions = strconv.Itoa(t.MaxStars), t.SkipZero, strconv.Itoa(max(t.Divisions, 1))
-	case "custom":
-		f.CustomName, f.CustomCutoffs = t.Name, strings.Join(t.Cutoffs, "\n")
+		f.Stars.fill(t)
 	}
-	if t.Kind == "stars" || t.Kind == "named" {
-		f.Sizes = cmp.Or(t.Sizes, "even")
-		f.Factor, f.From, f.Alpha, f.Beta = cmp.Or(t.Factor, f.Factor), cmp.Or(t.From, f.From), cmp.Or(t.Alpha, f.Alpha), cmp.Or(t.Beta, f.Beta)
+	if t, ok := d.Remembered("named"); ok {
+		f.NamedTiers = strings.Join(t.Tiers, "\n")
+		f.Named.fill(t)
 	}
-	f.TierNames = strings.Join(t.Tiers, "\n")
+	if t, ok := d.Remembered("custom"); ok {
+		f.CustomName, f.CustomTiers, f.CustomCutoffs = t.Name, strings.Join(t.Tiers, "\n"), strings.Join(t.Cutoffs, "\n")
+	}
 	return f
+}
+
+// usable reports whether the form's fields for templates of the given kind
+// make a template that can be used.
+func (f displayForm) usable(kind string) bool {
+	t, err := f.templateOf(kind)
+	if err != nil {
+		return false
+	}
+	d := tierlist.DefaultDisplay()
+	d.Template, d.Convention = t, f.Convention
+	return d.Check() == nil
 }
 
 func (s *Server) tiers(w http.ResponseWriter, r *http.Request, ol *openList) {
@@ -889,6 +956,7 @@ func (s *Server) tiers(w http.ResponseWriter, r *http.Request, ol *openList) {
 // from the saved options when it is being shown again with an error.
 func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList, form displayForm, formErr string, status int) {
 	l := ol.list
+	form.NamedReady, form.CustomReady = form.usable("named"), form.usable("custom")
 	v := tiersView{view: s.view(r, "tiers", ol), Form: form}
 	if formErr != "" {
 		v.Error = formErr
@@ -945,7 +1013,7 @@ func hue(i, n int) int {
 }
 
 func (s *Server) setDisplay(w http.ResponseWriter, r *http.Request, ol *openList) {
-	d, form, err := parseDisplay(r)
+	d, form, err := parseDisplay(r, ol.list.Display)
 	if err != nil {
 		s.showTiers(w, r, ol, form, sentence(err.Error()), http.StatusBadRequest)
 		return
@@ -957,8 +1025,10 @@ func (s *Server) setDisplay(w http.ResponseWriter, r *http.Request, ol *openList
 	back(w, r, listURL(ol.key)+"/tiers", "", "")
 }
 
-// parseDisplay reads the display options form.
-func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
+// parseDisplay reads the display options form. The template in use is the
+// kind chosen; for each other kind, it keeps the options the form has, if
+// they make a usable template, or else the ones old had, if any.
+func parseDisplay(r *http.Request, old tierlist.Display) (tierlist.Display, displayForm, error) {
 	f := readDisplayForm(r)
 	d := tierlist.Display{Convention: f.Convention, GroupRule: f.GroupRule, Prefer: f.Prefer}
 	margin, err := strconv.ParseFloat(f.DrawMargin, 64)
@@ -968,6 +1038,16 @@ func parseDisplay(r *http.Request) (tierlist.Display, displayForm, error) {
 	d.DrawMargin = margin
 	if d.Template, err = f.template(); err != nil {
 		return d, f, err
+	}
+	for _, kind := range tierlist.OptionKinds {
+		if kind == d.Template.Kind {
+			continue
+		}
+		if t, err := f.templateOf(kind); err == nil && f.usable(kind) {
+			d.Others = append(d.Others, t)
+		} else if t, ok := old.Remembered(kind); ok {
+			d.Others = append(d.Others, t)
+		}
 	}
 	if err := d.Check(); err != nil {
 		return d, f, err
@@ -980,19 +1060,31 @@ func readDisplayForm(r *http.Request) displayForm {
 	return displayForm{
 		Kind: r.FormValue("kind"), MaxStars: strings.TrimSpace(r.FormValue("maxStars")),
 		SkipZero: r.FormValue("skipZero") != "", Divisions: strings.TrimSpace(r.FormValue("divisions")),
-		Sizes: cmp.Or(r.FormValue("sizes"), "even"), Factor: strings.TrimSpace(r.FormValue("factor")),
-		From: cmp.Or(r.FormValue("from"), "best"), Alpha: strings.TrimSpace(r.FormValue("alpha")), Beta: strings.TrimSpace(r.FormValue("beta")),
-		CustomName: strings.TrimSpace(r.FormValue("customName")), TierNames: r.FormValue("tierNames"),
+		Stars: readSizes(r, ""), NamedTiers: r.FormValue("namedTiers"), Named: readSizes(r, "named-"),
+		CustomName: strings.TrimSpace(r.FormValue("customName")), CustomTiers: r.FormValue("customTiers"),
 		CustomCutoffs: r.FormValue("customCutoffs"), Convention: r.FormValue("convention"),
 		DrawMargin: strings.TrimSpace(r.FormValue("drawMargin")), GroupRule: r.FormValue("groupRule"),
 		Prefer: r.FormValue("prefer"),
 	}
 }
 
-// template reads the template the form chooses. It does not check that
-// the template can be built; Display.Check does.
-func (f displayForm) template() (tierlist.Template, error) {
-	switch f.Kind {
+// readSizes reads the tier sizes from the fields named with prefix.
+func readSizes(r *http.Request, prefix string) sizesForm {
+	f := newSizesForm(prefix)
+	f.Sizes = cmp.Or(r.FormValue(prefix+"sizes"), "even")
+	f.Factor = strings.TrimSpace(r.FormValue(prefix + "factor"))
+	f.From = cmp.Or(r.FormValue(prefix+"from"), "best")
+	f.Alpha, f.Beta = strings.TrimSpace(r.FormValue(prefix+"alpha")), strings.TrimSpace(r.FormValue(prefix+"beta"))
+	return f
+}
+
+// template reads the template the form chooses.
+func (f displayForm) template() (tierlist.Template, error) { return f.templateOf(f.Kind) }
+
+// templateOf reads the form's fields for templates of the given kind. It
+// does not check that the template can be built; Display.Check does.
+func (f displayForm) templateOf(kind string) (tierlist.Template, error) {
+	switch kind {
 	case "stars":
 		maxStars, err1 := strconv.Atoi(f.MaxStars)
 		divisions, err2 := strconv.Atoi(cmp.Or(f.Divisions, "1"))
@@ -1002,17 +1094,17 @@ func (f displayForm) template() (tierlist.Template, error) {
 		if divisions == 1 {
 			divisions = 0
 		}
-		return f.withSizes(tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions})
+		return f.Stars.apply(tierlist.Template{Kind: "stars", MaxStars: maxStars, SkipZero: f.SkipZero, Divisions: divisions})
 	case "named":
-		tiers, err := f.tierNames()
+		tiers, err := tierNames(f.NamedTiers)
 		if err != nil {
 			return tierlist.Template{}, err
 		}
-		return f.withSizes(tierlist.Template{Kind: "named", Tiers: tiers})
+		return f.Named.apply(tierlist.Template{Kind: "named", Tiers: tiers})
 	case "owl-newt":
 		return tierlist.Template{Kind: "owl-newt"}, nil
 	case "custom":
-		tiers, err := f.tierNames()
+		tiers, err := tierNames(f.CustomTiers)
 		if err != nil {
 			return tierlist.Template{}, err
 		}
@@ -1025,8 +1117,8 @@ func (f displayForm) template() (tierlist.Template, error) {
 	return tierlist.Template{}, errors.New("choose a template")
 }
 
-// withSizes adds the tier sizes the form chooses to t.
-func (f displayForm) withSizes(t tierlist.Template) (tierlist.Template, error) {
+// apply adds the tier sizes the form chooses to t.
+func (f sizesForm) apply(t tierlist.Template) (tierlist.Template, error) {
 	switch f.Sizes {
 	case "even":
 	case "geometric":
@@ -1039,10 +1131,10 @@ func (f displayForm) withSizes(t tierlist.Template) (tierlist.Template, error) {
 	return t, nil
 }
 
-// tierNames reads the tier names, best first, one per line.
-func (f displayForm) tierNames() ([]string, error) {
+// tierNames reads tier names, best first, one per line.
+func tierNames(text string) ([]string, error) {
 	var tiers []string
-	for _, line := range strings.Split(f.TierNames, "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			tiers = append(tiers, line)
 		}

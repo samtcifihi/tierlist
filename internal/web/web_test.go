@@ -2,7 +2,7 @@ package web
 
 import (
 	"cmp"
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -144,7 +144,7 @@ func TestLibrary(t *testing.T) {
 func TestExportImport(t *testing.T) {
 	dir := t.TempDir()
 	_, c := start(t, dir)
-	base := c.newList("Films", "Alien, example.com/alien, Sci-fi horror", "Brazil")
+	base := c.newList("Films", `[{"name": "Alien", "url": "example.com/alien", "description": "Sci-fi horror"}, "Brazil"]`)
 	c.answer(base, 1, 2, 0, "a")
 	// The start page offers each list for export, and the export page
 	// shows its file as it is saved.
@@ -221,7 +221,7 @@ func TestEntries(t *testing.T) {
 
 func TestEntryDetails(t *testing.T) {
 	_, c := start(t, t.TempDir())
-	base := c.newList("Films", "Alien, example.com/alien, Sci-fi horror, 1979", "Brazil")
+	base := c.newList("Films", `[{"name": "Alien", "url": "example.com/alien", "description": "Sci-fi horror, 1979"}, "Brazil"]`)
 	entry := func(name string) tierlist.Entry {
 		t.Helper()
 		for _, e := range c.load("films").Entries {
@@ -243,17 +243,16 @@ func TestEntryDetails(t *testing.T) {
 		t.Helper()
 		return c.post(base+"/entries", url.Values{"names": {text}})
 	}
-	// A title already in the list, in any case, updates that entry: an
+	// A name already in the list, in any case, updates that entry: an
 	// empty link given clears it, and it keeps its ID and answers.
-	if _, loc := add("alien, , Chestbursting"); !strings.Contains(loc, "Added+0+entries.+Updated+1+entry+already+in+the+list.") {
+	if _, loc := add(`[{"name": "alien", "url": "", "description": "Chestbursting"}]`); !strings.Contains(loc, "Added+0+entries.+Updated+1+entry+already+in+the+list.") {
 		t.Errorf("updating Alien: %s", loc)
 	}
 	if e := entry("Alien"); e.ID != 1 || e.URL != "" || e.Description != "Chestbursting" || len(c.load("films").Comparisons) != 1 {
 		t.Errorf("Alien updated to %+v", e)
 	}
-	// A description left off the line stays, and a title alone changes
-	// nothing.
-	add("Alien, https://example.org/alien")
+	// A description left out stays, and a name alone changes nothing.
+	add(`{"name": "Alien", "url": "https://example.org/alien"}`)
 	if e := entry("Alien"); e.URL != "https://example.org/alien" || e.Description != "Chestbursting" {
 		t.Errorf("Alien given only a link: %+v", e)
 	}
@@ -263,19 +262,20 @@ func TestEntryDetails(t *testing.T) {
 	if e := entry("Alien"); e.URL != "https://example.org/alien" || e.Description != "Chestbursting" {
 		t.Errorf("Alien alone again: %+v", e)
 	}
-	if _, loc := add("Brazil\nCasablanca, example.com/c"); !strings.Contains(loc, "Added+1+entry.+Skipped+1+name+already+in+the+list.") {
+	if _, loc := add(`["Brazil", {"name": "Casablanca", "url": "example.com/c"}]`); !strings.Contains(loc, "Added+1+entry.+Skipped+1+name+already+in+the+list.") {
 		t.Errorf("adding Brazil again and Casablanca: %s", loc)
 	}
-	// A line that can't be read changes nothing, and the page shows the
-	// text again, to fix.
+	// JSON that can't be read changes nothing, and the page shows the text
+	// again, to fix.
+	bad := "[\n  \"Dune\",\n  {\"name\": \"Kill Bill\", \"url\": \"Vol. 1\"}\n]"
 	status, _, body := func() (int, http.Header, string) {
-		req, _ := http.NewRequest("POST", c.srv.URL+base+"/entries", strings.NewReader(url.Values{"names": {"Dune\nKill Bill, Vol. 1"}}.Encode()))
+		req, _ := http.NewRequest("POST", c.srv.URL+base+"/entries", strings.NewReader(url.Values{"names": {bad}}.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		return c.do(req)
 	}()
-	if status != http.StatusBadRequest || !strings.Contains(body, "Line 2, &#34;Kill Bill, Vol. 1&#34;: &#34;Vol. 1&#34; isn&#39;t a web address") ||
-		!strings.Contains(body, ">Dune\nKill Bill, Vol. 1</textarea>") || len(c.load("films").Entries) != 3 {
-		t.Errorf("a bad line: %d, %d entries\n%s", status, len(c.load("films").Entries), body)
+	if status != http.StatusBadRequest || !strings.Contains(body, "Entry 2: &#34;Vol. 1&#34; isn&#39;t a web address") ||
+		!strings.Contains(html.UnescapeString(body), ">"+bad+"</textarea>") || len(c.load("films").Entries) != 3 {
+		t.Errorf("bad JSON: %d, %d entries\n%s", status, len(c.load("films").Entries), body)
 	}
 	// The entries page links each entry to its page and shows what it's about.
 	_, body = c.get(base + "/entries")
@@ -288,7 +288,7 @@ func TestEntryDetails(t *testing.T) {
 	// The rating page shows what each entry of the pair is about, cut short
 	// if long, with its link in the corner of its box.
 	long := strings.Repeat("Very long indeed. ", 30)
-	add("Alien, https://example.org/alien, " + long + "\nBrazil,, Dystopia\nCasablanca,, Wartime romance")
+	add(`[{"name": "Alien", "description": "` + long + `"}, {"name": "Brazil", "description": "Dystopia"}, {"name": "Casablanca", "url": "", "description": "Wartime romance"}]`)
 	a, b, _, body := c.question(base)
 	names := map[int]string{1: "Alien", 2: "Brazil", 3: "Casablanca"}
 	descs := map[int]string{1: strings.TrimSpace(long), 2: "Dystopia", 3: "Wartime romance"}
@@ -465,35 +465,35 @@ func TestRatingsShownInPoints(t *testing.T) {
 	}
 }
 
-func TestEntriesCSV(t *testing.T) {
+func TestEntriesJSON(t *testing.T) {
 	_, c := start(t, t.TempDir())
-	// (A title with a comma goes in quotes, as a CSV field.)
-	base := c.newList("Films", "Alien", `"Kill Bill, Vol. 1"`, `The "Thing"`, "Zardoz", "Heat")
+	base := c.newList("Films", "Alien", "Kill Bill, Vol. 1", `The "Thing"`, "Zardoz", "Heat & Dust")
+	c.post(base+"/entries", url.Values{"names": {`[{"name": "Alien", "url": "example.com/alien", "description": "Sci-fi <horror>"}]`}})
 	c.answer(base, 1, 2, 0, "a")
 	c.answer(base, 2, 3, 1, "same")
 	c.answer(base, 3, 4, 2, "a")
 	c.answer(base, 1, 3, 3, "a")
 	c.post(base+"/entries/4/remove", nil)
 	_, body := c.get(base + "/entries")
-	const open = `aria-label="The entries as CSV">`
+	const open = `aria-label="The entries as JSON">`
 	i := strings.Index(body, open)
-	if i < 0 || !strings.Contains(body, "<summary>CSV, to copy</summary>") {
-		t.Fatalf("no CSV on the entries page:\n%s", body)
+	if i < 0 || !strings.Contains(body, "<summary>JSON, to copy</summary>") {
+		t.Fatalf("no JSON on the entries page:\n%s", body)
 	}
 	text, _, _ := strings.Cut(body[i+len(open):], "</textarea>")
 	text = html.UnescapeString(text)
-	// Names with commas and quotes are quoted, as CSV has it.
-	if !strings.HasPrefix(text, "entry name,rating,CI width,number of answers\n") ||
-		!strings.Contains(text, "\n\"Kill Bill, Vol. 1\",") || !strings.Contains(text, "\n\"The \"\"Thing\"\"\",") {
-		t.Errorf("CSV:\n%s", text)
+	// One entry a line, with & and < as they are.
+	if !strings.HasPrefix(text, "[\n  {\"name\":\"Alien\",") || !strings.HasSuffix(text, "}\n]") || !strings.Contains(text, `"name":"Heat & Dust"`) ||
+		!strings.Contains(text, `"description":"Sci-fi <horror>"`) || strings.Count(text, "\n") != 5 {
+		t.Errorf("JSON:\n%s", text)
 	}
-	records, err := csv.NewReader(strings.NewReader(text)).ReadAll()
-	if err != nil {
-		t.Fatalf("reading the CSV back: %v\n%s", err, text)
+	var entries []entryJSON
+	if err := json.Unmarshal([]byte(text), &entries); err != nil {
+		t.Fatalf("reading the JSON back: %v\n%s", err, text)
 	}
 	// The shown entries, best first, with the ratings and ± uncertainties
-	// (one standard deviation) the page shows, and the answer counts.
-	// Zardoz is removed, so it is left out.
+	// (one standard deviation) the page shows, the answer counts, and the
+	// links and descriptions. Zardoz is removed, so it is left out.
 	l := c.load("films")
 	fit, err := l.Fit()
 	if err != nil {
@@ -501,21 +501,31 @@ func TestEntriesCSV(t *testing.T) {
 	}
 	want := l.Shown()
 	slices.SortStableFunc(want, func(a, b tierlist.Entry) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
-	if len(records) != 1+len(want) || len(want) != 4 || want[0].Name != "Alien" {
-		t.Fatalf("CSV has %d records for %v:\n%s", len(records), want, text)
+	if len(entries) != len(want) || len(want) != 4 || want[0].Name != "Alien" {
+		t.Fatalf("JSON has %d entries for %v:\n%s", len(entries), want, text)
 	}
 	counts := l.Counts()
 	for k, e := range want {
-		rec := records[k+1]
-		if rec[0] != e.Name || rec[1] != fmt.Sprintf("%.0f", fit.Points(e.ID)) || rec[2] != fmt.Sprintf("%.0f", fit.PointsSD(e.ID)) ||
-			rec[3] != strconv.Itoa(counts[e.ID]) || !strings.Contains(body, "± "+rec[2]+"<") {
-			t.Errorf("row %d: %q, want %s with rating %.1f ± %.1f and %d answers", k+1, rec, e.Name, fit.Points(e.ID), fit.PointsSD(e.ID), counts[e.ID])
+		got := entries[k]
+		if got.Name != e.Name || fmt.Sprint(got.Rating) != fmt.Sprintf("%.0f", fit.Points(e.ID)) || fmt.Sprint(got.CIWidth) != fmt.Sprintf("%.0f", fit.PointsSD(e.ID)) ||
+			got.Answers != counts[e.ID] || got.URL != e.URL || got.Description != e.Description || !strings.Contains(body, fmt.Sprintf("± %d<", got.CIWidth)) {
+			t.Errorf("entry %d: %+v, want %s with rating %.1f ± %.1f and %d answers", k+1, got, e.Name, fit.Points(e.ID), fit.PointsSD(e.ID), counts[e.ID])
 		}
 	}
-	// A list with no entries has no CSV.
+	// Pasted into another list, it adds the entries with their details,
+	// leaving the ratings and answers behind.
+	other := c.newList("Copy")
+	if _, loc := c.post(other+"/entries", url.Values{"names": {text}}); !strings.Contains(loc, "Added+4+entries.") {
+		t.Errorf("adding the JSON to another list: %s", loc)
+	}
+	copied := c.load("copy")
+	if len(copied.Entries) != 4 || copied.Entries[0].URL != "https://example.com/alien" || copied.Entries[0].Description != "Sci-fi <horror>" || len(copied.Comparisons) != 0 {
+		t.Errorf("copied entries %+v", copied.Entries)
+	}
+	// A list with no entries has no JSON.
 	c.newList("Empty")
-	if _, body := c.get("/lists/empty/entries"); strings.Contains(body, "CSV") {
-		t.Errorf("CSV for an empty list:\n%s", body)
+	if _, body := c.get("/lists/empty/entries"); strings.Contains(body, "JSON, to copy") {
+		t.Errorf("JSON for an empty list:\n%s", body)
 	}
 }
 
@@ -584,24 +594,24 @@ func TestTierListPage(t *testing.T) {
 	if status, _ := display("owl-newt", nil); status != http.StatusSeeOther {
 		t.Errorf("choosing OWL/NEWT: %d", status)
 	}
-	// Switching back to stars from here starts at 10 stars.
+	// Switching back to stars from here finds them as they were: 0–5.
 	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding (1): Alien") ||
-		!strings.Contains(body, `name="maxStars" min="3" value="10"`) || !strings.Contains(body, `value="owl-newt" checked> OWL/NEWT`) {
+		!strings.Contains(body, `name="maxStars" min="3" value="5"`) || !strings.Contains(body, `value="owl-newt" checked> OWL/NEWT`) {
 		t.Errorf("OWL/NEWT tier list:\n%s", body)
 	}
-	status, _ = display("custom", url.Values{"customName": {"Halves"}, "tierNames": {"Good\nBad"}, "customCutoffs": {"1/2"}})
+	status, _ = display("custom", url.Values{"customName": {"Halves"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"1/2"}})
 	if l := c.load("films"); status != http.StatusSeeOther || l.Display.Template.Kind != "custom" ||
 		!slices.Equal(l.Display.Template.Tiers, []string{"Good", "Bad"}) {
 		t.Errorf("custom template: %d, %+v", status, l.Display)
 	}
 	// Cut-offs may come in any order, separated by commas or lines.
-	display("custom", url.Values{"tierNames": {"S\nA\nB\nC"}, "customCutoffs": {"0.9, 1/4\n0.5"}})
+	display("custom", url.Values{"customTiers": {"S\nA\nB\nC"}, "customCutoffs": {"0.9, 1/4\n0.5"}})
 	if l := c.load("films"); !slices.Equal(l.Display.Template.Cutoffs, []string{"1/4", "0.5", "0.9"}) {
 		t.Errorf("cut-offs saved as %v", l.Display.Template.Cutoffs)
 	}
 	for _, bad := range []url.Values{
-		{"kind": {"custom"}, "tierNames": {"Good\nBad"}, "customCutoffs": {"half"}},
-		{"kind": {"custom"}, "tierNames": {""}, "customCutoffs": {""}},
+		{"kind": {"custom"}, "customTiers": {"Good\nBad"}, "customCutoffs": {"half"}},
+		{"kind": {"custom"}, "customTiers": {""}, "customCutoffs": {""}},
 		{"kind": {"stars"}, "maxStars": {"2"}},
 		{"kind": {"stars"}, "drawMargin": {"-3"}},
 	} {
@@ -1284,7 +1294,7 @@ func TestNamedTiers(t *testing.T) {
 	// either where it redirects to or the page it shows.
 	display := func(extra url.Values) (int, string) {
 		t.Helper()
-		form := mergeForm(url.Values{"kind": {"named"}, "tierNames": {"Top\n Good\n\nOkay\nWeak "}, "sizes": {"even"}})
+		form := mergeForm(url.Values{"kind": {"named"}, "namedTiers": {"Top\n Good\n\nOkay\nWeak "}, "named-sizes": {"even"}})
 		for k, v := range extra {
 			form[k] = v
 		}
@@ -1315,7 +1325,7 @@ func TestNamedTiers(t *testing.T) {
 		t.Errorf("nearest-tier tier list:\n%s", got)
 	}
 	_, body := c.get(base + "/tiers")
-	for _, want := range []string{`value="named" data-wait checked> Named tiers`, `<option value="even" selected>Nearest tier</option>`,
+	for _, want := range []string{`value="named" checked> Named tiers`, `<option value="even" selected>Nearest tier</option>`,
 		"Top\nGood\nOkay\nWeak</textarea>", `<title>Weak: 16.7% of the list</title>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("tier list page lacks %q", want)
@@ -1323,7 +1333,7 @@ func TestNamedTiers(t *testing.T) {
 	}
 	// Beta(1/2, 1/2) over four equal parts puts the cut-offs at 1/3, 1/2
 	// and 2/3, so the end tiers get more entries.
-	display(url.Values{"sizes": {"beta"}, "alpha": {"1/2"}, "beta": {"1/2"}})
+	display(url.Values{"named-sizes": {"beta"}, "named-alpha": {"1/2"}, "named-beta": {"1/2"}})
 	if got := plain(); got != "Top (3): A, B, C\nGood (1): D\nOkay (1): E\nWeak (3): F, G, H" {
 		t.Errorf("Beta(1/2, 1/2) tier list:\n%s", got)
 	}
@@ -1332,20 +1342,27 @@ func TestNamedTiers(t *testing.T) {
 	}
 	// Geometric sizes, each tier twice the one before from the best: 1, 2,
 	// 4 and 8 fifteenths.
-	display(url.Values{"sizes": {"geometric"}, "factor": {"2"}, "from": {"best"}})
+	display(url.Values{"named-sizes": {"geometric"}, "named-factor": {"2"}, "named-from": {"best"}})
 	if got := plain(); got != "Top (1): A\nGood (1): B\nOkay (2): C, D\nWeak (4): E, F, G, H" {
 		t.Errorf("geometric tier list:\n%s", got)
 	}
-	// The names carry over to a custom template, and back.
-	c.post(base+"/display", mergeForm(url.Values{"kind": {"custom"}, "tierNames": {"Top\nGood\nOkay\nWeak"}, "customCutoffs": {"1/4, 1/2, 3/4"}}))
-	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Top\nGood\nOkay\nWeak</textarea>") || !strings.Contains(body, `value="custom" data-wait checked`) {
-		t.Errorf("custom tiers from the named ones:\n%s", body)
+	// A custom template has names of its own, and the named tiers keep
+	// theirs, to come back to.
+	c.post(base+"/display", mergeForm(url.Values{"kind": {"custom"}, "customTiers": {"Hot\nNot"}, "customCutoffs": {"1/2"},
+		"namedTiers": {"Top\nGood\nOkay\nWeak"}, "named-sizes": {"geometric"}, "named-factor": {"2"}, "named-from": {"best"}}))
+	_, body = c.get(base + "/tiers")
+	for _, want := range []string{`name="customTiers" rows="6" placeholder="S&#10;A&#10;B&#10;C">Hot` + "\n" + `Not</textarea>`,
+		`name="namedTiers" rows="6" placeholder="S&#10;A&#10;B&#10;C">Top` + "\n" + `Good` + "\n" + `Okay` + "\n" + `Weak</textarea>`,
+		`value="custom" checked> Custom`, `name="named-factor" value="2"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tier list page with a custom template lacks %q", want)
+		}
 	}
 	for _, bad := range []url.Values{
-		{"tierNames": {" \n "}},
-		{"sizes": {"beta"}, "alpha": {"0"}, "beta": {"1"}},
-		{"sizes": {"geometric"}, "factor": {"none"}},
-		{"sizes": {"cubes"}},
+		{"namedTiers": {" \n "}},
+		{"named-sizes": {"beta"}, "named-alpha": {"0"}, "named-beta": {"1"}},
+		{"named-sizes": {"geometric"}, "named-factor": {"none"}},
+		{"named-sizes": {"cubes"}},
 	} {
 		if status, body := display(bad); status != http.StatusBadRequest || !strings.Contains(body, `class="note error"`) {
 			t.Errorf("named tiers with %v: %d", bad, status)
@@ -1353,6 +1370,117 @@ func TestNamedTiers(t *testing.T) {
 	}
 	if tm := c.load("letters").Display.Template; tm.Kind != "custom" {
 		t.Errorf("a bad form changed the saved template to %+v", tm)
+	}
+}
+
+// formValues reads the display form on a tier list page as a browser would
+// send it, with every field's value as the page shows it.
+func formValues(t *testing.T, body string) url.Values {
+	t.Helper()
+	i := strings.Index(body, `class="display"`)
+	if i < 0 {
+		t.Fatalf("no display form:\n%s", body)
+	}
+	form := body[i : i+strings.Index(body[i:], "</form>")]
+	attr := func(attrs, name string) string {
+		if m := regexp.MustCompile(`\b` + name + `="([^"]*)"`).FindStringSubmatch(attrs); m != nil {
+			return html.UnescapeString(m[1])
+		}
+		return ""
+	}
+	v := url.Values{}
+	for _, m := range regexp.MustCompile(`<input ([^>]*)>`).FindAllStringSubmatch(form, -1) {
+		switch name := attr(m[1], "name"); attr(m[1], "type") {
+		case "radio", "checkbox":
+			if strings.Contains(m[1]+" ", " checked ") {
+				v.Add(name, cmp.Or(attr(m[1], "value"), "on"))
+			}
+		default:
+			v.Add(name, attr(m[1], "value"))
+		}
+	}
+	for _, m := range regexp.MustCompile(`(?s)<select name="([^"]+)">(.*?)</select>`).FindAllStringSubmatch(form, -1) {
+		options := regexp.MustCompile(`<option value="([^"]*)"( selected)?>`).FindAllStringSubmatch(m[2], -1)
+		chosen := options[0][1]
+		for _, o := range options {
+			if o[2] != "" {
+				chosen = o[1]
+			}
+		}
+		v.Add(m[1], chosen)
+	}
+	for _, m := range regexp.MustCompile(`(?s)<textarea name="([^"]+)"[^>]*>(.*?)</textarea>`).FindAllStringSubmatch(form, -1) {
+		v.Add(m[1], html.UnescapeString(m[2]))
+	}
+	return v
+}
+
+// Each kind of template keeps the options it last had, so that switching
+// to another kind and back finds them as they were.
+func TestRememberedTemplates(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Letters", "A", "B", "C", "D")
+	// submit sends the form as the page has it, with the given changes.
+	submit := func(changes url.Values) {
+		t.Helper()
+		_, body := c.get(base + "/tiers")
+		form := formValues(t, body)
+		for k, v := range changes {
+			form[k] = v
+		}
+		if status, loc := c.post(base+"/display", form); status != http.StatusSeeOther || strings.Contains(loc, "err=") {
+			_, page := c.get(base + "/tiers")
+			t.Fatalf("submitting %v: %d, %s\n%s", changes, status, loc, page)
+		}
+	}
+	// A new list has the defaults, and named tiers and custom templates
+	// wait to be filled in.
+	_, body := c.get(base + "/tiers")
+	for _, want := range []string{`name="alpha" value="2"`, `name="named-alpha" value="2"`, `name="customName" value="Custom"`,
+		`value="named" data-wait>`, `value="custom" data-wait>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a new list's tier list page lacks %q", want)
+		}
+	}
+	submit(url.Values{"sizes": {"beta"}, "alpha": {"5"}, "beta": {"2"}})
+	// Off to a custom template for a while...
+	submit(url.Values{"kind": {"custom"}, "customName": {"Halves"}, "customTiers": {"Hot\nNot"}, "customCutoffs": {"1/2"}})
+	d := c.load("letters").Display
+	if stars, ok := d.Remembered("stars"); d.Template.Kind != "custom" || !ok || stars.Sizes != "beta" || stars.Alpha != "5" || stars.Beta != "2" {
+		t.Errorf("with a custom template in use: %+v", d)
+	}
+	// ...and back to stars, which are Beta(5, 2) again, with nothing else
+	// done than choosing them.
+	submit(url.Values{"kind": {"stars"}})
+	if tm := c.load("letters").Display.Template; tm.Kind != "stars" || tm.Sizes != "beta" || tm.Alpha != "5" || tm.Beta != "2" {
+		t.Errorf("back to stars: %+v", tm)
+	}
+	// So is the custom template, which now applies as soon as it is chosen.
+	_, body = c.get(base + "/tiers")
+	if !strings.Contains(body, `value="custom">`) || !strings.Contains(body, "Hot\nNot</textarea>") {
+		t.Errorf("stars in use, with a custom template kept:\n%s", body)
+	}
+	submit(url.Values{"kind": {"custom"}})
+	if tm := c.load("letters").Display.Template; tm.Kind != "custom" || tm.Name != "Halves" || !slices.Equal(tm.Cutoffs, []string{"1/2"}) {
+		t.Errorf("back to the custom template: %+v", tm)
+	}
+	// Options changed for a kind not chosen are kept if they make a usable
+	// template, and otherwise the ones it had stay.
+	submit(url.Values{"kind": {"stars"}, "namedTiers": {"S\nA\nB"}, "named-sizes": {"geometric"}, "named-factor": {"3"},
+		"customCutoffs": {"not a cut-off"}})
+	d = c.load("letters").Display
+	named, okNamed := d.Remembered("named")
+	custom, okCustom := d.Remembered("custom")
+	if !okNamed || !slices.Equal(named.Tiers, []string{"S", "A", "B"}) || named.Factor != "3" || !okCustom || !slices.Equal(custom.Cutoffs, []string{"1/2"}) {
+		t.Errorf("kept options: named %+v, custom %+v", named, custom)
+	}
+	// Another list starts with the defaults.
+	other := c.newList("Others", "X", "Y")
+	if _, body := c.get(other + "/tiers"); !strings.Contains(body, `name="alpha" value="2"`) || !strings.Contains(body, `value="custom" data-wait>`) {
+		t.Errorf("a second list doesn't start with the defaults:\n%s", body)
+	}
+	if d := c.load("others").Display; len(d.Others) != 0 {
+		t.Errorf("a new list keeps options: %+v", d.Others)
 	}
 }
 

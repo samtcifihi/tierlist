@@ -771,6 +771,56 @@ func TestDisplayOptions(t *testing.T) {
 	}
 }
 
+func TestRememberedOptions(t *testing.T) {
+	d := DefaultDisplay()
+	if tm, ok := d.Remembered("stars"); !ok || tm.MaxStars != 10 {
+		t.Errorf("a new list's stars: %+v, %v", tm, ok)
+	}
+	if _, ok := d.Remembered("custom"); ok {
+		t.Error("a new list remembers a custom template")
+	}
+	// Custom in use, with the stars and named tiers chosen before kept.
+	stars := Template{Kind: "stars", MaxStars: 5, Sizes: "beta", Alpha: "5", Beta: "2"}
+	named := Template{Kind: "named", Tiers: []string{"S", "A"}, Sizes: "geometric", Factor: "2"}
+	d.Template = Template{Kind: "custom", Name: "Halves", Tiers: []string{"Good", "Bad"}, Cutoffs: []string{"1/2"}}
+	d.Others = []Template{stars, named}
+	if err := d.Check(); err != nil {
+		t.Fatal(err)
+	}
+	for kind, want := range map[string]Template{"stars": stars, "named": named, "custom": d.Template} {
+		if tm, ok := d.Remembered(kind); !ok || !reflect.DeepEqual(tm, want) {
+			t.Errorf("remembered %s: %+v, %v", kind, tm, ok)
+		}
+	}
+	// They are saved with the list.
+	l := mustNew(t, "Letters", "A", "B")
+	l.Display = d
+	path := filepath.Join(t.TempDir(), "letters.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if l2, err := Load(path); err != nil || !reflect.DeepEqual(l2.Display, d) {
+		t.Errorf("loaded display %+v, %v", l2.Display, err)
+	}
+	// Kept options needn't make a usable template yet, but there is at
+	// most one set for each kind, other than the one in use.
+	d.Others = []Template{{Kind: "stars", MaxStars: 1}, {Kind: "named"}}
+	if err := d.Check(); err != nil {
+		t.Errorf("unusable kept options: %v", err)
+	}
+	for _, bad := range [][]Template{
+		{{Kind: "stars"}, {Kind: "stars"}},
+		{{Kind: "custom"}},
+		{{Kind: "owl-newt"}},
+		{{Kind: "square"}},
+	} {
+		d.Others = bad
+		if err := d.Check(); err == nil {
+			t.Errorf("kept options %+v with custom in use: want an error", bad)
+		}
+	}
+}
+
 func TestShape(t *testing.T) {
 	// 0–10 stars, nearest star: the end tiers cover half as much.
 	s, err := DefaultDisplay().Shape()
