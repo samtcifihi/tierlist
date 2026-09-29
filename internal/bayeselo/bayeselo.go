@@ -63,6 +63,29 @@ func (r *Result) DiffVar(i, j int) float64 {
 	return r.Cov(i, i) + r.Cov(j, j) - 2*r.Cov(i, j)
 }
 
+// Information returns the Fisher information that one comparison's answer
+// carries about the rating gap diff (Elo), with draw setting drawElo, per
+// Elo². It is highest where the answer is hardest to predict: at a gap of
+// 0 while drawElo is below 400·log10(3), about 191, where equally rated
+// entries are called about the same half the time, and near a gap of
+// drawElo above that.
+func Information(diff, drawElo float64) float64 {
+	d, t := diff*eloToNat, drawElo*eloToNat
+	// The expected negative second derivative of the log-probability of
+	// each answer, weighted by its probability, simplifies to this.
+	nat := dsigmoid(d-t)*sigmoid(d+t) + dsigmoid(d+t)*sigmoid(t-d)
+	return nat * eloToNat * eloToNat
+}
+
+// Gain returns the expected information, in nats, that comparing entries i
+// and j would add to the ratings under their Gaussian approximation:
+// ½ ln(1 + Information × DiffVar). It is only available on results
+// returned by Fit.
+func (r *Result) Gain(i, j int) float64 {
+	v := max(r.DiffVar(i, j), 0) // rounding could leave it a hair below 0
+	return math.Log1p(Information(r.Ratings[i]-r.Ratings[j], r.DrawElo)*v) / 2
+}
+
 // Levels returns how many levels of quality the user tells apart among the
 // entries, by the model: 1 divided by the probability that two randomly
 // chosen entries would be judged about the same. It returns 0 for fewer

@@ -213,6 +213,74 @@ func TestProbabilities(t *testing.T) {
 	}
 }
 
+func TestInformation(t *testing.T) {
+	// Check against the definition, the sum over answers of p'²/p, with
+	// the derivatives taken numerically from Probabilities.
+	const h = 1e-3
+	for _, draw := range []float64{0, 40, 120, 300} {
+		for _, diff := range []float64{-500, -90, 0, 30, 250, 800} {
+			b0, s0, w0 := Probabilities(diff-h, draw)
+			b1, s1, w1 := Probabilities(diff+h, draw)
+			b, s, w := Probabilities(diff, draw)
+			want := 0.0
+			for _, q := range [][3]float64{{b, b0, b1}, {s, s0, s1}, {w, w0, w1}} {
+				if q[0] > 0 {
+					dp := (q[2] - q[1]) / (2 * h)
+					want += dp * dp / q[0]
+				}
+			}
+			if got := Information(diff, draw); !near(got, want, 1e-5) {
+				t.Errorf("Information(%g, %g) = %g, want %g", diff, draw, got, want)
+			}
+		}
+	}
+	// Up to a draw setting of 400·log10(3), a gap of 0 is the most
+	// informative; beyond it, a gap near the draw setting is.
+	switchDraw := 400 * math.Log10(3)
+	if Information(0, switchDraw-5) <= Information(20, switchDraw-5) {
+		t.Error("just below the switch, a gap of 0 should beat a gap of 20")
+	}
+	if Information(0, switchDraw+5) >= Information(20, switchDraw+5) {
+		t.Error("just above the switch, a gap of 20 should beat a gap of 0")
+	}
+	if Information(0, 500) >= Information(500, 500) {
+		t.Error("with a draw setting of 500, a gap of 500 should beat a gap of 0")
+	}
+}
+
+func TestGain(t *testing.T) {
+	res := &Result{
+		Ratings: []float64{0, 0, 300, 0},
+		DrawElo: 100,
+		cov: []float64{
+			40000, 0, 0, 0,
+			0, 40000, 0, 0,
+			0, 0, 40000, 0,
+			0, 0, 0, 10000,
+		},
+	}
+	want := math.Log1p(Information(0, 100)*80000) / 2
+	if got := res.Gain(0, 1); !near(got, want, 1e-12) {
+		t.Errorf("Gain(0, 1) = %g, want %g", got, want)
+	}
+	// A wider gap with the same uncertainty gains less, and so does the
+	// same gap with less uncertainty.
+	if !(res.Gain(0, 2) < res.Gain(0, 1)) || !(res.Gain(0, 3) < res.Gain(0, 1)) {
+		t.Errorf("Gain(0, 2) = %g and Gain(0, 3) = %g, want both below Gain(0, 1) = %g",
+			res.Gain(0, 2), res.Gain(0, 3), res.Gain(0, 1))
+	}
+	// Ratings that move together know their gap better.
+	res.cov[1], res.cov[4] = 30000, 30000
+	if !(res.Gain(0, 1) < want) {
+		t.Errorf("with covariance, Gain(0, 1) = %g, want below %g", res.Gain(0, 1), want)
+	}
+	// A gap known exactly gains nothing.
+	res.cov[1], res.cov[4] = 40000, 40000
+	if g := res.Gain(0, 1); g != 0 {
+		t.Errorf("with no uncertainty in the gap, Gain(0, 1) = %g, want 0", g)
+	}
+}
+
 func TestLevels(t *testing.T) {
 	// Equal ratings with the prior's draw setting: "about the same" a third
 	// of the time, so 3 levels.

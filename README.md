@@ -87,21 +87,21 @@ By default, the program scores every candidate pair and presents the one with th
 **Expected information.** For entries A and B, pairs are ranked by
 
 ```
-closeness(A, B) × uncertainty(A - B)
+sensitivity(A, B) × uncertainty(A - B)
 ```
 
-- **Closeness** is how close to a coin flip the comparison is expected to be: highest when the two ratings are equal, falling as they move apart. Precisely, it is the Fisher information of one comparison's outcome (win, draw or loss) with respect to the rating difference, under the Bayes Elo model at the current ratings.
+- **Sensitivity** is how strongly the answer depends on the exact rating gap, which is highest where the answer is hardest to predict. While the draw setting is below `400 log10(3)` (about 191 Elo, where equally rated entries are called about the same half the time), that is when the two ratings are equal. Above it, equally rated entries are called about the same more often than not, so the most informative pairs are instead roughly `θ` apart, where "better" and "about the same" are about equally likely. Precisely, sensitivity is the Fisher information of one comparison's outcome (win, draw or loss) with respect to the rating difference, under the Bayes Elo model at the current ratings.
 - **Uncertainty** is the variance of the difference between the two ratings, `Var(A) + Var(B) - 2 Cov(A, B)`, from Bayes Elo's estimate of the ratings' covariance (the same estimate its ± error bars come from).
 
-Under the usual Gaussian approximation of the ratings, the expected information gain of a comparison is `½ ln(1 + closeness × uncertainty)`, so ranking by the product is ranking by expected information. It favors entries whose ratings are close but not yet confidently known. Closeness alone is not enough: two entries with many comparisons behind them and nearly equal ratings are a coin flip, but another answer would barely change either rating.
+Under the usual Gaussian approximation of the ratings, the expected information gain of a comparison is `½ ln(1 + sensitivity × uncertainty)`, so ranking by the product is ranking by expected information. It favors pairs whose answer is hard to predict and whose rating gap is not yet confidently known. Sensitivity alone is not enough: two entries with many comparisons behind them and nearly equal ratings may be a coin flip, but another answer would barely change either rating.
 
-**Adjustments.**
+**Adjustments.** The score is the expected information gain, multiplied by these factors:
 
-- **Repeats:** each earlier comparison of the same pair multiplies its score by a penalty factor (for example ½), and the same pair is not presented twice in a row unless no other pair is available. Repeats are otherwise allowed. Each comparison already lowers the pair's uncertainty, but the model treats every answer as independent, while a user who remembers an earlier answer gives less new information than the model expects.
-- **Uncompared entries:** a pair that includes an entry with no comparisons yet gets a large bonus factor, so every entry gets compared at least once. (Such entries already score high, since only the prior constrains them.)
+- **Repeats:** ½ for each earlier comparison of the same pair. The same pair is also not presented twice in a row unless no other pair is available; repeats are otherwise allowed. Each comparison already lowers the pair's uncertainty, but the model treats every answer as independent, while a user who remembers an earlier answer gives less new information than the model expects.
+- **Uncompared entries:** 10 for a pair that includes an entry with no comparisons yet, so every entry gets compared at least once. (Such entries already score high, since only the prior constrains them.) In practice, uncompared entries pair up with each other first, so every entry of a new list has been compared once after about half as many answers as there are entries.
 - **Sides:** the two entries are shown in random order, so a habit of picking one side does not skew the ratings.
 
-The exact penalty and bonus factors are tuning details.
+The factors are tuning details and may change.
 
 #### Focus mode
 
@@ -220,6 +220,7 @@ The interval convention, plus the requirement that the cut-offs partition `[0, 1
 ## Code layout
 
 - `internal/bayeselo`: fitting ratings, the draw setting and the ratings' uncertainty to the comparisons.
+- `internal/pairing`: choosing the next pair to compare.
 - `internal/tier`: tier templates (stars, Hogwarts, custom) and placing a ranked list into tiers.
 
 ## Build
