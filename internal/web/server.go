@@ -1,7 +1,9 @@
 // Package web serves the program's pages: the library of saved lists and,
-// for each list, pages to rate it, edit its entries and see its tier list.
+// for each list, pages to rate it, edit its entries, see its tier list and
+// look back over its answers.
 // The pages are plain HTML forms rendered on the server; a little
-// JavaScript adds keyboard shortcuts.
+// JavaScript adds keyboard shortcuts and opens the dialogs that ask before
+// deleting.
 package web
 
 import (
@@ -67,8 +69,11 @@ func New(dir string) (*Server, error) {
 		rng:   rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)),
 		quit:  make(chan struct{}),
 	}
-	funcs := template.FuncMap{"join": func(xs []string) string { return strings.Join(xs, ", ") }}
-	for _, page := range []string{"library", "rate", "entries", "tiers", "message"} {
+	funcs := template.FuncMap{
+		"join":   func(xs []string) string { return strings.Join(xs, ", ") },
+		"plural": plural, // as in {{plural .Answers "answer" "answers"}}
+	}
+	for _, page := range []string{"library", "rate", "entries", "tiers", "answers", "message"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(files, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -94,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /lists", s.createList)
 	mux.HandleFunc("GET /lists/{list}", s.withList(s.listHome))
 	mux.HandleFunc("POST /lists/{list}/rename", s.withList(s.renameList))
+	mux.HandleFunc("POST /lists/{list}/delete", s.deleteList)
 	mux.HandleFunc("GET /lists/{list}/rate", s.withList(s.rate))
 	mux.HandleFunc("POST /lists/{list}/answer", s.withList(s.answer))
 	mux.HandleFunc("POST /lists/{list}/undo", s.withList(s.undo))
@@ -105,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /lists/{list}/focus", s.withList(s.setFocus))
 	mux.HandleFunc("GET /lists/{list}/tiers", s.withList(s.tiers))
 	mux.HandleFunc("POST /lists/{list}/display", s.withList(s.setDisplay))
+	mux.HandleFunc("GET /lists/{list}/answers", s.withList(s.answers))
 	mux.HandleFunc("POST /quit", s.quitNow)
 	return guard(mux)
 }
@@ -174,16 +181,26 @@ func (s *Server) withList(h func(http.ResponseWriter, *http.Request, *openList))
 	}
 }
 
-// open returns the list saved under key, reading its file again if it has
-// changed since the program last read or wrote it.
-func (s *Server) open(key string) (*openList, error) {
+// file returns the path of the file saved under key, which must be a file
+// directly in the folder, and its details.
+func (s *Server) file(key string) (string, os.FileInfo, error) {
 	if key == "" || strings.ContainsAny(key, `/\`) || !filepath.IsLocal(key) {
-		return nil, errNotFound
+		return "", nil, errNotFound
 	}
 	path := filepath.Join(s.dir, key+".json")
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return nil, errNotFound
+		return "", nil, errNotFound
+	}
+	return path, info, nil
+}
+
+// open returns the list saved under key, reading its file again if it has
+// changed since the program last read or wrote it.
+func (s *Server) open(key string) (*openList, error) {
+	path, info, err := s.file(key)
+	if err != nil {
+		return nil, err
 	}
 	if ol := s.lists[key]; ol != nil && ol.modTime.Equal(info.ModTime()) && ol.size == info.Size() {
 		return ol, nil

@@ -9,8 +9,10 @@
     <span class="muted">can't be opened: {{.Err}}</span>
     {{else}}
     <a href="{{.URL}}">{{.Name}}</a>
-    <span class="muted">{{.Entries}} entries · {{.Answers}} answers · changed {{.Modified}}</span>
+    <span class="muted">{{plural .Entries "entry" "entries"}} · {{plural .Answers "answer" "answers"}} · changed {{.Modified}}</span>
     {{end}}
+    {{template "delete-button" .Delete}}
+    {{template "confirm" .Delete}}
   </li>
   {{end}}
 </ul>

@@ -16,6 +16,7 @@
     <a href="{{.URL}}/rate"{{if eq $.Page "rate"}} aria-current="page"{{end}}>Rate</a>
     <a href="{{.URL}}/entries"{{if eq $.Page "entries"}} aria-current="page"{{end}}>Entries</a>
     <a href="{{.URL}}/tiers"{{if eq $.Page "tiers"}} aria-current="page"{{end}}>Tier list</a>
+    <a href="{{.URL}}/answers"{{if eq $.Page "answers"}} aria-current="page"{{end}}>Answers</a>
   </nav>
   {{end}}
   <form class="quit" method="post" action="/quit"><button class="subtle">Quit</button></form>
@@ -27,4 +28,21 @@
 </main>
 </body>
 </html>
+{{end}}
+
+{{/* A button that opens a confirm dialog, and the dialog. Cancel, the
+     button with the focus when it opens, closes it without sending. */}}
+{{define "delete-button"}}<button type="button" class="subtle delete" data-dialog="{{.ID}}">Delete</button>{{end}}
+{{define "confirm"}}
+<dialog id="{{.ID}}" class="confirm" aria-labelledby="{{.ID}}-title">
+  <form method="post" action="{{.Action}}">
+    <h2 id="{{.ID}}-title">{{.Title}}</h2>
+    <p>{{.Text}}</p>
+    <p class="warning">This can't be undone.</p>
+    <div class="actions">
+      <button formmethod="dialog" autofocus>Cancel</button>
+      <button class="danger">Delete</button>
+    </div>
+  </form>
+</dialog>
 {{end}}

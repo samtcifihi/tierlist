@@ -10,10 +10,11 @@ This project uses [just](https://github.com/casey/just), not make.
 
 Run `just run` (or build it with `just build` and start `bin/tierlist`, `bin\tierlist.exe` on Windows). The program opens its pages in your browser at <http://127.0.0.1:7317/>. It keeps running in its window until you press **Quit** on a page, close the window, or press Ctrl+C. Starting it again while it is running just opens the running copy, so two copies never write the same lists. If a tab is already open, `just serve` starts the program without opening another; refresh the tab once the program says it is running.
 
-- **Your lists:** the start page lists your saved tier lists and creates new ones.
+- **Your lists:** the start page lists your saved tier lists, creates new ones and deletes old ones. Deleting a list first asks in a dialog, since it can't be undone.
 - **Rate:** shows two entries and asks which is better. Click an entry or "About the same", or use the keys: <kbd>←</kbd> or <kbd>1</kbd> for the first, <kbd>↓</kbd> or <kbd>2</kbd> for about the same, <kbd>→</kbd> or <kbd>3</kbd> for the second, and <kbd>U</kbd> to undo the last answer.
-- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
+- **Entries:** add entries (one per line, so a list can be pasted in), rename them, remove and restore them, and choose entries for focus mode. The list itself can be renamed or deleted at the bottom. Entries are listed best first with their rating and its uncertainty, in points: every entry starts at 1500, and an entry 100 points above another is expected to score 2:1 against it (see [Shown ratings](#shown-ratings)).
 - **Tier list:** choose the display options and see the tier list, colored from blue at the top to red at the bottom, with a plain-text version to copy.
+- **Answers:** every answer so far, newest first and numbered in the order given. Under "Filter by entry", tick entries to see only the answers that involve at least one of them. An entry's count of answers on the Entries page leads to its answers too. Answers about removed entries are shown and marked, since they still count.
 
 Options: `-dir FOLDER` keeps lists somewhere else, `-port N` uses another port, and `-no-browser` doesn't open a browser.
 
@@ -197,7 +198,7 @@ For example:
 
 Here Brazil was shown first, and the user answered that the second entry, Alien, was better.
 
-A file is written to a temporary file first and then renamed into place, so a crash cannot leave a half-written list. The program refuses to save a list that would not load again, and refuses to load a file from a newer format version rather than silently dropping what it does not understand.
+A file is written to a temporary file first and then renamed into place, so a crash cannot leave a half-written list. Deleting a list deletes its file for good; a file that can't be opened can be deleted from the start page too. The program refuses to save a list that would not load again, and refuses to load a file from a newer format version rather than silently dropping what it does not understand.
 
 ## Display
 

@@ -9,6 +9,7 @@
   --accent-fg: #ffffff;
   --accent-soft: #e8eaf6;
   --danger: #b3261e;
+  --danger-fg: #ffffff;
   --tier-s: 75%;
   --tier-l: 78%;
   --radius: 12px;
@@ -25,6 +26,7 @@
     --accent-fg: #101014;
     --accent-soft: #262a40;
     --danger: #f2b8b5;
+    --danger-fg: #1e1e22;
     --tier-s: 45%;
     --tier-l: 32%;
   }
@@ -57,11 +59,17 @@ header.top {
 }
 .brand { font-weight: 700; color: inherit; text-decoration: none; }
 .list-name { font-weight: 600; overflow-wrap: anywhere; }
-nav { display: flex; gap: .25rem; }
+nav { display: flex; flex-wrap: wrap; gap: .25rem; }
 nav a { padding: .3rem .8rem; border-radius: 999px; color: inherit; text-decoration: none; }
 nav a:hover { background: var(--accent-soft); }
 nav a[aria-current] { background: var(--accent); color: var(--accent-fg); }
 header .quit { margin-left: auto; }
+/* On a phone, Quit stays up with the list's name and the tabs get a row of
+   their own. */
+@media (max-width: 40rem) {
+  header.top nav { order: 1; }
+  nav a { padding: .3rem .65rem; }
+}
 
 main { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
 
@@ -81,6 +89,8 @@ button:hover, .button:hover { border-color: var(--accent); }
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button.subtle { background: transparent; border-color: transparent; color: var(--muted); padding: .3rem .6rem; }
 button.subtle:hover { color: var(--fg); border-color: var(--line); }
+button.danger { background: var(--danger); border-color: var(--danger); color: var(--danger-fg); }
+button.danger:hover { border-color: var(--fg); }
 input, textarea, select {
   font: inherit;
   color: var(--fg);
@@ -103,6 +113,21 @@ kbd {
 .note.error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 form.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 
+/* Dialogs */
+dialog.confirm {
+  width: min(26rem, calc(100vw - 2rem));
+  padding: 1.25rem 1.5rem;
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+dialog.confirm::backdrop { background: rgb(0 0 0 / .5); }
+dialog.confirm h2 { margin: 0 0 .75rem; overflow-wrap: anywhere; }
+dialog.confirm p { margin: 0 0 .5rem; }
+dialog.confirm .warning { font-weight: 600; color: var(--danger); }
+dialog.confirm .actions { justify-content: flex-end; margin: 1.25rem 0 0; }
+
 /* Library */
 .lists { list-style: none; padding: 0; display: grid; gap: .5rem; margin: 0 0 1.5rem; }
 .lists li {
@@ -117,6 +142,7 @@ form.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 }
 .lists a { font-weight: 600; font-size: 1.1rem; }
 .damaged { font-weight: 600; }
+.lists .delete { margin-left: auto; }
 .new-list label { font-weight: 600; }
 
 /* Rating */
@@ -236,3 +262,38 @@ label.check { display: flex; gap: .4rem; align-items: center; }
 .plain { display: grid; gap: .3rem; margin-top: 1.5rem; }
 .plain label { font-weight: 600; }
 .plain textarea { font: .9rem/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+
+/* Answers */
+.filter details {
+  margin-bottom: 1rem;
+  padding: .6rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.filter summary { cursor: pointer; font-weight: 600; }
+.filter p { margin: .5rem 0; }
+.picks { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pick {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .7rem .2rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.pick:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.answers { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.answers li {
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: .75rem;
+  padding: .4rem .75rem;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.answers li:first-child { border-top: 0; }
+.answers .num { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }

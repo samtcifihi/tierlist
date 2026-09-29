@@ -25,9 +25,19 @@ for (const form of document.querySelectorAll("form[data-autosubmit]")) {
   });
 }
 
+// A button marked data-dialog opens the dialog with that ID, such as the
+// one that asks before deleting a list.
+for (const button of document.querySelectorAll("[data-dialog]")) {
+  button.addEventListener("click", () => document.getElementById(button.dataset.dialog).showModal());
+}
+
 // Send each form once, so that a double click or a held key cannot answer
-// twice.
+// twice. Closing a dialog with its Cancel button sends nothing, so it
+// doesn't count.
 document.addEventListener("submit", (e) => {
+  if (e.submitter?.getAttribute("formmethod") === "dialog") {
+    return;
+  }
   if (e.target.dataset.sent) {
     e.preventDefault();
   }

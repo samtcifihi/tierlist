@@ -43,7 +43,7 @@
   </form>
   {{end}}
   {{if .Ready}}
-  <p class="muted small">{{.Answers}} answers · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{with .Levels}} · {{.}}{{end}}</p>
+  <p class="muted small"><a class="muted" href="{{.List.URL}}/answers">{{plural .Answers "answer" "answers"}}</a> · <span title="How often two equally rated entries are called about the same">draw setting {{.Draw}}</span>{{with .Levels}} · {{.}}{{end}}</p>
   {{end}}
 </div>
 {{end}}

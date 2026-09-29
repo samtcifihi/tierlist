@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -25,6 +26,27 @@ type libraryView struct {
 type listSummary struct {
 	Name, URL, File, Modified, Err string
 	Entries, Answers               int
+	Delete                         confirm
+}
+
+// A confirm is a dialog that asks before deleting something, since that
+// can't be undone.
+type confirm struct {
+	ID     string // the dialog's element ID
+	Action string // where the form posts to
+	Title  string
+	Text   string
+}
+
+// deleteDialog returns the dialog that asks before deleting the list at
+// url.
+func deleteDialog(id, url, name string, entries, answers int) confirm {
+	text := "The list is empty."
+	if entries > 0 || answers > 0 {
+		text = fmt.Sprintf("Its %s and %s will be deleted with it.",
+			plural(entries, "entry", "entries"), plural(answers, "answer", "answers"))
+	}
+	return confirm{ID: id, Action: url + "/delete", Title: "Delete “" + name + "”?", Text: text}
 }
 
 func (s *Server) library(w http.ResponseWriter, r *http.Request) {
@@ -34,14 +56,18 @@ func (s *Server) library(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := libraryView{view: s.view(r, "library", nil), Dir: s.dir}
-	for _, sm := range sums {
+	for k, sm := range sums {
 		file := filepath.Base(sm.Path)
 		item := listSummary{
 			Name: sm.Name, URL: listURL(strings.TrimSuffix(file, ".json")), File: file,
 			Entries: sm.Entries, Answers: sm.Comparisons, Modified: sm.Modified.Format("2 Jan 2006, 15:04"),
 		}
+		id := fmt.Sprintf("delete-%d", k+1)
+		item.Delete = deleteDialog(id, item.URL, item.Name, item.Entries, item.Answers)
 		if sm.Err != nil {
 			item.Err = sm.Err.Error()
+			item.Delete = confirm{ID: id, Action: item.URL + "/delete", Title: "Delete " + file + "?",
+				Text: "This file can't be opened as a tier list."}
 		}
 		v.Lists = append(v.Lists, item)
 	}
@@ -77,6 +103,29 @@ func (s *Server) renameList(w http.ResponseWriter, r *http.Request, ol *openList
 		return
 	}
 	back(w, r, entries, "Renamed the list.", "")
+}
+
+// deleteList deletes a list's file. It does not need to open the list
+// first, so a damaged file can be deleted too.
+func (s *Server) deleteList(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := r.PathValue("list")
+	path, _, err := s.file(key)
+	if err != nil {
+		s.message(w, http.StatusNotFound, "No such list", "There is no list at this address.")
+		return
+	}
+	name := filepath.Base(path)
+	if l, err := tierlist.Load(path); err == nil {
+		name = l.Name
+	}
+	if err := os.Remove(path); err != nil {
+		back(w, r, "/", "", fmt.Sprintf("“%s” could not be deleted: %v", name, err))
+		return
+	}
+	delete(s.lists, key)
+	back(w, r, "/", "Deleted “"+name+"”.", "")
 }
 
 // saved saves the list, showing an error page and reporting false if that
@@ -227,6 +276,7 @@ type entriesView struct {
 	Shown   []entryRow
 	Removed []entryRow
 	Focus   bool
+	Delete  confirm
 }
 
 type entryRow struct {
@@ -246,7 +296,8 @@ func (s *Server) entries(w http.ResponseWriter, r *http.Request, ol *openList) {
 		return
 	}
 	counts := l.Counts()
-	v := entriesView{view: s.view(r, "entries", ol), Focus: len(l.Focus) > 0}
+	v := entriesView{view: s.view(r, "entries", ol), Focus: len(l.Focus) > 0,
+		Delete: deleteDialog("delete-list", listURL(ol.key), l.Name, len(l.Shown()), len(l.Comparisons))}
 	for _, e := range l.Entries {
 		row := entryRow{
 			ID: e.ID, Name: e.Name, Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID),

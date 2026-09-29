@@ -122,7 +122,7 @@ func TestLibrary(t *testing.T) {
 	c.newList("Films & shows", "Alien")
 	_, body := c.get("/")
 	if !strings.Contains(body, `href="/lists/films-shows"`) || !strings.Contains(body, "Films &amp; shows") ||
-		!strings.Contains(body, "1 entries") {
+		!strings.Contains(body, "1 entry · 0 answers") {
 		t.Errorf("library does not show the new list:\n%s", body)
 	}
 	if status, loc := c.post("/lists", url.Values{"name": {"  "}}); status != http.StatusSeeOther || !strings.Contains(loc, "err=") {
@@ -454,5 +454,141 @@ func TestOtherRoutes(t *testing.T) {
 	case <-s.Quit():
 	default:
 		t.Error("Quit was not signalled")
+	}
+}
+
+func TestDeleteList(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	films := c.newList("Films", "Alien", "Brazil")
+	c.answer(films, 1, 2, 0, "a")
+	games := c.newList("Games")
+	os.WriteFile(filepath.Join(c.dir, "broken.json"), []byte("{"), 0o644)
+
+	// Every list in the library, damaged or not, can be deleted after a
+	// dialog that warns it can't be undone.
+	_, body := c.get("/")
+	for _, want := range []string{
+		`data-dialog="delete-1"`, `<dialog id="delete-1"`, `action="/lists/broken/delete"`,
+		"Delete broken.json?", "This file can&#39;t be opened as a tier list.",
+		`action="/lists/films/delete"`, "Delete “Films”?", "Its 2 entries and 1 answer will be deleted with it.",
+		`action="/lists/games/delete"`, "Delete “Games”?", "The list is empty.",
+		"This can't be undone.", `<button formmethod="dialog" autofocus>Cancel</button>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("library page lacks %q:\n%s", want, body)
+		}
+	}
+	// So can the list on its entries page.
+	if _, body := c.get(games + "/entries"); !strings.Contains(body, `data-dialog="delete-list"`) ||
+		!strings.Contains(body, `action="/lists/games/delete"`) {
+		t.Errorf("entries page has no way to delete the list:\n%s", body)
+	}
+
+	status, loc := c.post(films+"/delete", nil)
+	if u, _ := url.Parse(loc); status != http.StatusSeeOther || u.Path != "/" || u.Query().Get("msg") != "Deleted “Films”." {
+		t.Errorf("deleting Films: %d, %s", status, loc)
+	}
+	if _, err := os.Stat(filepath.Join(c.dir, "films.json")); !os.IsNotExist(err) {
+		t.Errorf("films.json after deleting: %v", err)
+	}
+	if status, _ := c.get(films + "/rate"); status != http.StatusNotFound {
+		t.Errorf("a deleted list's page: %d", status)
+	}
+	if status, _ := c.post(films+"/delete", nil); status != http.StatusNotFound {
+		t.Errorf("deleting it again: %d", status)
+	}
+	// A new list with the same name starts empty.
+	c.newList("Films")
+	if _, body := c.get(films + "/entries"); strings.Contains(body, `value="Alien"`) {
+		t.Errorf("a new list called Films shows the deleted one's entries:\n%s", body)
+	}
+
+	if _, loc := c.post("/lists/broken/delete", nil); !strings.Contains(loc, "msg=Deleted+%E2%80%9Cbroken.json") {
+		t.Errorf("deleting the damaged file: %s", loc)
+	}
+	// Only a list file directly in the folder can be deleted, and only from
+	// the program's own pages.
+	os.WriteFile(filepath.Join(filepath.Dir(c.dir), "secret.json"), []byte("{}"), 0o644)
+	for _, path := range []string{"/lists/..%2Fsecret/delete", "/lists/a%5Cb/delete", "/lists//delete"} {
+		if status, _ := c.post(path, nil); status != http.StatusNotFound && status != http.StatusMovedPermanently {
+			t.Errorf("POST %s: %d", path, status)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(c.dir), "secret.json")); err != nil {
+		t.Errorf("a file outside the folder was touched: %v", err)
+	}
+	req, _ := http.NewRequest("POST", c.srv.URL+games+"/delete", nil)
+	req.Header.Set("Origin", "http://evil.example")
+	if status, _, _ := c.do(req); status != http.StatusForbidden {
+		t.Errorf("a deletion from another site: %d", status)
+	}
+	var names []string
+	sums, _ := tierlist.Lists(c.dir)
+	for _, s := range sums {
+		names = append(names, s.Name)
+	}
+	if !slices.Equal(names, []string{"Films", "Games"}) {
+		t.Errorf("lists left: %v", names)
+	}
+}
+
+var answerRows = regexp.MustCompile(`<li><span class="num">(\d+)</span> <span>(.*?)</span></li>`)
+
+// answersShown returns the answers page's rows as plain text.
+func answersShown(body string) []string {
+	tags := regexp.MustCompile(`<[^>]*>`)
+	var rows []string
+	for _, m := range answerRows.FindAllStringSubmatch(body, -1) {
+		rows = append(rows, m[1]+" "+tags.ReplaceAllString(m[2], ""))
+	}
+	return rows
+}
+
+func TestAnswersPage(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil", "Casablanca", "Dune", "Eraserhead")
+	if _, body := c.get(base + "/answers"); !strings.Contains(body, "No answers yet") {
+		t.Errorf("answers page with no answers:\n%s", body)
+	}
+	c.answer(base, 1, 2, 0, "a")    // Alien over Brazil
+	c.answer(base, 3, 2, 1, "b")    // Brazil over Casablanca
+	c.answer(base, 3, 4, 2, "same") // Casablanca and Dune about the same
+	c.post(base+"/entries/4/remove", nil)
+
+	_, body := c.get(base + "/answers")
+	want := []string{"3 Casablanca and Dune (removed) about the same", "2 Brazil over Casablanca", "1 Alien over Brazil"}
+	if got := answersShown(body); !slices.Equal(got, want) || !strings.Contains(body, "3 answers, newest first.") ||
+		!strings.Contains(body, `href="/lists/films/answers" aria-current="page"`) || strings.Contains(body, "<details open") {
+		t.Errorf("answers %q, want %q; page:\n%s", got, want, body)
+	}
+
+	for _, tt := range []struct {
+		query   string
+		rows    []string
+		summary string
+	}{
+		{"entry=2", []string{"2 Brazil over Casablanca", "1 Alien over Brazil"}, "Answers involving Brazil: 2 of 3, newest first."},
+		{"entry=4&entry=1", []string{"3 Casablanca and Dune (removed) about the same", "1 Alien over Brazil"},
+			"Answers involving Alien or Dune: 2 of 3, newest first."},
+		{"entry=5", nil, "None of the 3 answers involve Eraserhead."},
+		{"entry=x&entry=99", want, "3 answers, newest first."},
+	} {
+		_, body := c.get(base + "/answers?" + tt.query)
+		if got := answersShown(body); !slices.Equal(got, tt.rows) || !strings.Contains(body, tt.summary) {
+			t.Errorf("?%s: answers %q and no %q; page:\n%s", tt.query, got, tt.summary, body)
+		}
+	}
+	// A filter keeps its choices ticked, shows the chosen names in bold and
+	// offers a way back to every answer.
+	_, body = c.get(base + "/answers?entry=2")
+	for _, want := range []string{"<details open>", `value="2" checked`, "<strong>Brazil</strong>", `href="/lists/films/answers">Show all</a>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("filtered page lacks %q:\n%s", want, body)
+		}
+	}
+	// Each entry's count of answers on the entries page leads here.
+	if _, body := c.get(base + "/entries"); !strings.Contains(body, `href="/lists/films/answers?entry=2">2 answers</a>`) ||
+		!strings.Contains(body, `href="/lists/films/answers?entry=1">1 answer</a>`) {
+		t.Errorf("entries page does not link to each entry's answers:\n%s", body)
 	}
 }

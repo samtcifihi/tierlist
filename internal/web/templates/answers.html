@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1>Answers</h1>
+{{if not .Total}}
+<p>No answers yet. Each answer on the Rate page shows up here.</p>
+<p><a class="button primary" href="{{.List.URL}}/rate">Rate</a></p>
+{{else}}
+<form method="get" action="{{.List.URL}}/answers" class="filter">
+  <details{{if .Filtered}} open{{end}}>
+    <summary>Filter by entry</summary>
+    <p class="muted small">Tick entries to see only the answers that involve at least one of them.</p>
+    <div class="picks">
+      {{range .Entries}}
+      <label class="pick"><input type="checkbox" name="entry" value="{{.ID}}"{{if .Chosen}} checked{{end}}> {{.Name}}{{if .Removed}} <span class="muted">(removed)</span>{{end}}</label>
+      {{end}}
+    </div>
+    <div class="actions">
+      <button class="primary">Filter</button>
+      {{if .Filtered}}<a class="button" href="{{.List.URL}}/answers">Show all</a>{{end}}
+    </div>
+  </details>
+</form>
+<p class="muted small">{{.Summary}}</p>
+{{with .Rows}}
+<ol class="answers">
+  {{range .}}
+  <li><span class="num">{{.N}}</span> <span>{{template "answer-name" .First}} {{if .Same}}and {{template "answer-name" .Second}} about the same{{else}}over {{template "answer-name" .Second}}{{end}}</span></li>
+  {{end}}
+</ol>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "answer-name"}}{{if .Chosen}}<strong>{{.Name}}</strong>{{else}}{{.Name}}{{end}}{{if .Removed}} <span class="muted small">(removed)</span>{{end}}{{end}}
