@@ -50,7 +50,10 @@ type Comparison struct {
 // through its methods, which keep its cached fit up to date. A List is not
 // safe for concurrent use.
 type List struct {
-	Name        string       `json:"name"`
+	Name string `json:"name"`
+	// Question is what the rating page asks about each pair, such as
+	// "Which is funnier?"; empty means DefaultQuestion.
+	Question    string       `json:"question,omitempty"`
 	Entries     []Entry      `json:"entries"`
 	Comparisons []Comparison `json:"comparisons"`
 	// Focus holds the IDs of the entries in focus mode; empty means the
@@ -81,6 +84,25 @@ func New(name string) (*List, error) {
 		return nil, errors.New("a list needs a name")
 	}
 	return &List{Name: name, Entries: []Entry{}, Comparisons: []Comparison{}, Display: DefaultDisplay()}, nil
+}
+
+// DefaultQuestion is what the rating page asks about each pair of a list
+// that has no question of its own.
+const DefaultQuestion = "Which is better?"
+
+// Asks returns what the rating page asks about each pair: the list's own
+// question, or DefaultQuestion.
+func (l *List) Asks() string {
+	if l.Question == "" {
+		return DefaultQuestion
+	}
+	return l.Question
+}
+
+// SetQuestion sets what the rating page asks about each pair; an empty
+// question means DefaultQuestion.
+func (l *List) SetQuestion(q string) {
+	l.Question = strings.TrimSpace(q)
 }
 
 // SetName renames the list.

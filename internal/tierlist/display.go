@@ -34,6 +34,11 @@ type Display struct {
 	GroupRule string `json:"groupRule"`
 	// Prefer is "higher" or "lower".
 	Prefer string `json:"prefer"`
+	// Proportional says what a tier's share of [0, 1] is a share of:
+	// "entry" (or "", the default) for the entries, counted by rank, or
+	// "rating" for the range of ratings, from the lowest to the highest
+	// (see tier.Positions).
+	Proportional string `json:"proportional,omitempty"`
 }
 
 // Template chooses the tier template.
@@ -246,8 +251,22 @@ func (d Display) options() (tier.Options, error) {
 	default:
 		return o, fmt.Errorf("unknown preference %q", d.Prefer)
 	}
+	switch d.Proportional {
+	case "", "entry":
+		o.Positions = tier.ByRank
+	case "rating":
+		o.Positions = tier.ByRating
+	default:
+		return o, fmt.Errorf("tiers are entry-proportional or rating-proportional, not %q", d.Proportional)
+	}
+	// Ratings as close to a cut-off's as this are on it, as ratings this
+	// close are grouped (see MinDrawMargin).
+	o.Tolerance = MinDrawMargin
 	if !(o.DrawMargin >= 0) {
 		return o, fmt.Errorf("draw-margin %v is below 0", o.DrawMargin)
 	}
 	return o, nil
 }
+
+// ByRating reports whether the tiers are rating-proportional.
+func (d Display) ByRating() bool { return d.Proportional == "rating" }

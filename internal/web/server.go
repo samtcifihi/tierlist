@@ -175,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /lists/{list}/export", s.exportList)
 	mux.HandleFunc("GET /lists/{list}", s.withList(s.listHome))
 	mux.HandleFunc("POST /lists/{list}/rename", s.withList(s.renameList))
+	mux.HandleFunc("POST /lists/{list}/question", s.withList(s.setQuestion))
 	mux.HandleFunc("POST /lists/{list}/delete", s.deleteList)
 	mux.HandleFunc("POST /lists/{list}/reset", s.withList(s.resetList))
 	mux.HandleFunc("GET /lists/{list}/rate", s.withList(s.rate))

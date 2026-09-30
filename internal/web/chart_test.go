@@ -36,7 +36,7 @@ func mustShape(t *testing.T, tmpl tierlist.Template) tierlist.Shape {
 func TestShapeChart(t *testing.T) {
 	// 0–10 stars, nearest star: steps of 11 × 1/20 = 0.55 at the ends
 	// and 11 × 1/10 = 1.1 between, under a top of 1.25.
-	v := shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10}), true)
+	v := shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10}), true, false)
 	if v.Top != "1.25" || v.OneY != "200" || v.OneAt != "80.0" || len(v.Dividers) != 10 || v.Dividers[0] != "90.9" || len(v.Parts) != 11 {
 		t.Errorf("nearest star chart: %+v", v)
 	}
@@ -49,8 +49,16 @@ func TestShapeChart(t *testing.T) {
 		t.Errorf("nearest star parts %+v, caption %q", v.Parts, v.Caption)
 	}
 
+	// Rating-proportional tiers take their shares of the range of ratings
+	// instead: the same shape, told differently.
+	w := shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10}), true, true)
+	if w.Parts[0].Title != "0★: 5% of the rating range" || w.Line != v.Line ||
+		!strings.Contains(w.Caption, "the tier's share of the range of ratings, from the lowest to the highest, so the total area is 1.") {
+		t.Errorf("rating-proportional parts %+v, caption %q", w.Parts, w.Caption)
+	}
+
 	// Beta(2, 2) is smooth, peaking at 1.5 in the middle, under a top of 2.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "2", Beta: "2"}), true)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "2", Beta: "2"}), true, false)
 	if v.Top != "2" || !strings.Contains(v.Line, "L500 250L") || strings.Count(v.Line, "L") < curveSamples ||
 		!strings.HasPrefix(v.Caption, "The Beta(2, 2) density. Each tier") || len(v.Parts) != 11 {
 		t.Errorf("Beta(2, 2) chart: top %s, caption %q, line %.200s", v.Top, v.Caption, v.Line)
@@ -58,13 +66,13 @@ func TestShapeChart(t *testing.T) {
 
 	// Beta(1/2, 1/2) has no bound at either end. The top comes from the
 	// density at 0.01 and 0.99, about 3.2, and the curve runs off it.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "1/2", Beta: "1/2"}), true)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "1/2", Beta: "1/2"}), true, false)
 	if v.Top != "4" || !strings.HasPrefix(v.Line, "M0 -50L") || !strings.HasSuffix(v.Line, "L1000 -50") {
 		t.Errorf("Beta(1/2, 1/2) chart: top %s, line %.60s...%s", v.Top, v.Line, v.Line[len(v.Line)-30:])
 	}
 
 	// A narrow peak still gets drawn: Beta(2000, 2000) peaks at about 50.5.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "2000", Beta: "2000"}), true)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "2000", Beta: "2000"}), true, false)
 	if v.Top != "60" || v.OneAt != "" || !strings.Contains(v.Line, "L500 159") {
 		t.Errorf("Beta(2000, 2000) chart: top %s, one at %q, line has no peak near 159", v.Top, v.OneAt)
 	}
@@ -72,13 +80,13 @@ func TestShapeChart(t *testing.T) {
 	// Beta(100000, 200000) peaks at about 464, near 1/3 but between the
 	// evenly spaced points, which only reach about 290. The points around
 	// the peak catch it, for a top of 600 rather than 400.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "100000", Beta: "200000"}), true)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 10, Sizes: "beta", Alpha: "100000", Beta: "200000"}), true, false)
 	if v.Top != "600" {
 		t.Errorf("Beta(100000, 200000) chart: top %s, want 600", v.Top)
 	}
 
 	// OWL/NEWT: Troll holds 16/31 of the list, 6 × 16/31 ≈ 3.1 high.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "owl-newt"}), false)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "owl-newt"}), false, false)
 	titles := []string{}
 	for _, p := range v.Parts {
 		titles = append(titles, p.Title)
@@ -90,7 +98,7 @@ func TestShapeChart(t *testing.T) {
 	}
 
 	// Lots of tiers leave out the lines between them and the hover parts.
-	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 100, Divisions: 4}), true)
+	v = shapeChart(mustShape(t, tierlist.Template{Kind: "stars", MaxStars: 100, Divisions: 4}), true, false)
 	if len(v.Dividers) != 0 || len(v.Parts) != 0 || strings.Count(v.Line, "L") != 2*401-1 {
 		t.Errorf("401 tiers: %d dividers, %d parts, %d line points", len(v.Dividers), len(v.Parts), strings.Count(v.Line, "L")+1)
 	}

@@ -33,6 +33,12 @@
   {{with .Chart}}{{template "chart" .}}{{end}}
   <fieldset>
     <legend>Placement</legend>
+    <label class="field">Tiers are
+      <select name="proportional">
+        <option value="entry"{{if eq .Form.Proportional "entry"}} selected{{end}}>entry-proportional</option>
+        <option value="rating"{{if eq .Form.Proportional "rating"}} selected{{end}}>rating-proportional</option>
+      </select>
+      <span class="muted small">Entry-proportional: each tier's area is its share of the entries, spaced evenly by rank. Rating-proportional: its share of the range of ratings, from the lowest to the highest, so a tier can be crowded or empty.</span></label>
     <label class="field">An entry exactly on a cut-off goes
       <select name="convention">
         <option value="top-closed"{{if eq .Form.Convention "top-closed"}} selected{{end}}>up (top tier closed)</option>

@@ -118,6 +118,111 @@ func TestPlaceHalfStarsLikeDoubledWholeStars(t *testing.T) {
 	}
 }
 
+// By rating, each entry stands where its rating lies between the worst
+// rating and the best, so the tiers split the range of ratings rather than
+// the entries.
+func TestPlaceByRating(t *testing.T) {
+	three := []string{"top", "middle", "bottom"}
+	thirds := mustNew(t, "thirds", three, rats("1/3", "2/3"), TopClosed)
+	halves := mustNew(t, "halves", []string{"top", "bottom"}, rats("1/2"), TopClosed)
+	halvesDown := mustNew(t, "halves", []string{"top", "bottom"}, rats("1/2"), BottomClosed)
+	thirdsDown := mustNew(t, "thirds", three, rats("1/3", "2/3"), BottomClosed)
+	byRating := Options{Positions: ByRating, Tolerance: 1e-6}
+	with := func(o Options, f func(*Options)) Options { f(&o); return o }
+
+	tests := []struct {
+		name    string
+		tmpl    Template
+		ratings []float64
+		opts    Options
+		want    string
+	}{
+		// At 1, 8/9, 1/9, 1/18 and 0: nothing in the middle third of the
+		// range, though by rank the middle entry would be there.
+		{"a gap in the ratings", thirds, []float64{1000, 900, 200, 150, 100}, byRating,
+			"top top bottom bottom bottom"},
+		{"a gap in the ratings, by rank", thirds, []float64{1000, 900, 200, 150, 100}, Options{},
+			"top top middle bottom bottom"},
+		// One far ahead squeezes the rest to the bottom.
+		{"an outlier", thirds, []float64{2000, 300, 200, 100}, byRating,
+			"top bottom bottom bottom"},
+		// Exactly on the cut-off, the convention decides.
+		{"on a cut-off, top closed", halves, []float64{300, 200, 100}, byRating,
+			"top top bottom"},
+		{"on a cut-off, bottom closed", halvesDown, []float64{300, 200, 100}, byRating,
+			"top bottom bottom"},
+		// So it does within the tolerance of it, either way...
+		{"just below a cut-off", halves, []float64{300, 200 - 1e-9, 100}, byRating,
+			"top top bottom"},
+		{"just above a cut-off", halvesDown, []float64{300, 200 + 1e-9, 100}, byRating,
+			"top bottom bottom"},
+		// ...but not beyond it.
+		{"below a cut-off", halves, []float64{300, 200 - 1e-3, 100}, byRating,
+			"top bottom bottom"},
+		{"just below a cut-off, no tolerance", halves, []float64{300, 200 - 1e-9, 100}, with(byRating, func(o *Options) { o.Tolerance = 0 }),
+			"top bottom bottom"},
+		// A third of the way up is on the cut-off at 1/3, though 1/3 can't
+		// be written exactly as a float.
+		{"on a cut-off of 1/3, no tolerance", thirds, []float64{3, 1, 0}, with(byRating, func(o *Options) { o.Tolerance = 0 }),
+			"top middle bottom"},
+		// Ratings all the same, or all within the tolerance, stand at 1/2.
+		{"all the same", thirds, []float64{5, 5, 5, 5}, byRating,
+			"middle middle middle middle"},
+		{"all the same, on a cut-off", halves, []float64{5, 5}, byRating,
+			"top top"},
+		{"all the same, on a cut-off, bottom closed", halvesDown, []float64{5, 5}, byRating,
+			"bottom bottom"},
+		{"all within the tolerance", thirds, []float64{5 + 1e-9, 5, 5 - 1e-9}, byRating,
+			"middle middle middle"},
+		{"all within the tolerance, bottom closed", thirdsDown, []float64{5 + 1e-9, 5, 5 - 1e-9}, byRating,
+			"middle middle middle"},
+		// Groups work as by rank: at 1, 0.678, 0.656 and 0, the 2nd and
+		// 3rd would go top and middle alone, and go together.
+		{"a group split by a cut-off, higher", thirds, []float64{900, 610, 590, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30 }),
+			"top top top bottom"},
+		{"a group split by a cut-off, lower", thirds, []float64{900, 610, 590, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30; o.Prefer = Lower }),
+			"top middle middle bottom"},
+		{"a group, alternate rule", thirds, []float64{900, 610, 590, 300, 0}, with(byRating, func(o *Options) { o.DrawMargin = 300; o.Rule = Alternate; o.Prefer = Lower }),
+			"bottom bottom bottom bottom bottom"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := placeNames(t, tt.ratings, tt.tmpl, tt.opts); got != tt.want {
+				t.Errorf("got  %s\nwant %s", got, tt.want)
+			}
+		})
+	}
+}
+
+// Evenly spaced ratings stand where their ranks do, so by rating they go
+// where they would by rank, cut-offs and all, whatever rounding does to
+// the positions.
+func TestPlaceByRatingEvenlySpaced(t *testing.T) {
+	templates := []Template{
+		mustStars(t, StarOptions{Max: 5}, TopClosed),
+		mustStars(t, StarOptions{Max: 5}, BottomClosed),
+		mustStars(t, StarOptions{Max: 10, Divisions: 2}, TopClosed),
+		mustNew(t, "thirds", []string{"a", "b", "c"}, rats("1/3", "2/3"), TopClosed),
+		mustNew(t, "sevenths", []string{"a", "b", "c"}, rats("1/7", "5/7"), BottomClosed),
+	}
+	for _, tmpl := range templates {
+		for n := 2; n <= 43; n++ {
+			for _, step := range []float64{1, 0.1, 37.3} {
+				ratings := make([]float64, n)
+				for i := range ratings {
+					ratings[i] = 1500 + step*float64(n-1-i)
+				}
+				byRank, err1 := Place(ratings, tmpl, Options{})
+				byRating, err2 := Place(ratings, tmpl, Options{Positions: ByRating, Tolerance: 1e-6})
+				if err1 != nil || err2 != nil || !slices.Equal(byRank, byRating) {
+					t.Errorf("%s, convention %d, %d entries %v apart: by rank %v (%v), by rating %v (%v)",
+						tmpl.Name, tmpl.Convention, n, step, byRank, err1, byRating, err2)
+				}
+			}
+		}
+	}
+}
+
 func TestPlaceTooFewEntries(t *testing.T) {
 	stars := mustStars(t, StarOptions{Max: 5}, TopClosed)
 	for _, ratings := range [][]float64{nil, {1500}} {
@@ -143,6 +248,9 @@ func TestPlaceRejects(t *testing.T) {
 		{"unknown rule", []float64{2, 1}, stars, Options{Rule: 2}},
 		{"unknown direction", []float64{2, 1}, stars, Options{Prefer: 2}},
 		{"malformed template", []float64{2, 1}, Template{}, Options{}},
+		{"unknown positions", []float64{2, 1}, stars, Options{Positions: 2}},
+		{"negative tolerance", []float64{2, 1}, stars, Options{Positions: ByRating, Tolerance: -1}},
+		{"NaN tolerance", []float64{2, 1}, stars, Options{Positions: ByRating, Tolerance: math.NaN()}},
 	}
 	for _, tt := range tests {
 		if placed, err := Place(tt.ratings, tt.tmpl, tt.opts); err == nil {

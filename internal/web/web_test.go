@@ -1484,6 +1484,119 @@ func TestRememberedTemplates(t *testing.T) {
 	}
 }
 
+// A list can ask its own question about each pair on the rating page.
+func TestQuestion(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil")
+	asks := func() string {
+		t.Helper()
+		_, body := c.get(base + "/rate")
+		m := regexp.MustCompile(`<h1 class="question">(.*?)</h1>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no question on the rating page:\n%s", body)
+		}
+		return m[1]
+	}
+	if got := asks(); got != "Which is better?" {
+		t.Errorf("a new list asks %q", got)
+	}
+	if _, body := c.get(base + "/entries"); !strings.Contains(body, `<input name="question" class="wide" value="" placeholder="Which is better?"`) {
+		t.Errorf("no question field on the entries page:\n%s", body)
+	}
+	status, loc := c.post(base+"/question", url.Values{"question": {"  Which is funnier?  "}})
+	if status != http.StatusSeeOther || !strings.Contains(loc, "/entries?msg=The+rating+page+now+asks+%E2%80%9CWhich+is+funnier%3F%E2%80%9D") {
+		t.Errorf("setting the question: %d, %s", status, loc)
+	}
+	if got := asks(); got != "Which is funnier?" || c.load("films").Question != "Which is funnier?" {
+		t.Errorf("asks %q, saved %q", got, c.load("films").Question)
+	}
+	if _, body := c.get(base + "/entries"); !strings.Contains(body, `<input name="question" class="wide" value="Which is funnier?"`) {
+		t.Errorf("the entries page doesn't show the question:\n%s", body)
+	}
+	// It is text, not HTML.
+	c.post(base+"/question", url.Values{"question": {"Which is <b>odder</b> & why?"}})
+	if got := asks(); got != "Which is &lt;b&gt;odder&lt;/b&gt; &amp; why?" {
+		t.Errorf("asks %q", got)
+	}
+	// Left empty, it asks the default question again.
+	c.post(base+"/question", url.Values{"question": {""}})
+	if got := asks(); got != "Which is better?" || c.load("films").Question != "" {
+		t.Errorf("with the question cleared: asks %q, saved %q", got, c.load("films").Question)
+	}
+}
+
+// plainTiers returns the tier list of the list at base, as its plain text.
+func (c *client) plainTiers(base string) string {
+	c.t.Helper()
+	_, body := c.get(base + "/tiers")
+	m := regexp.MustCompile(`(?s)<textarea id="plain"[^>]*>(.*?)</textarea>`).FindStringSubmatch(body)
+	if m == nil {
+		c.t.Fatalf("no tier list:\n%s", body)
+	}
+	return html.UnescapeString(m[1])
+}
+
+// Rating-proportional tiers split the range of ratings, from the lowest to
+// the highest, rather than the entries.
+func TestRatingProportionalTiers(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil", "Casablanca", "Dune")
+	// Alien beats the rest, which are all about the same as each other.
+	for n, p := range [][2]int{{1, 2}, {1, 3}, {1, 4}} {
+		c.answer(base, p[0], p[1], n, "a")
+	}
+	for n, p := range [][2]int{{2, 3}, {3, 4}, {4, 2}} {
+		c.answer(base, p[0], p[1], 3+n, "same")
+	}
+	thirds := func(proportional string) url.Values {
+		return mergeForm(url.Values{"kind": {"custom"}, "customName": {"Thirds"}, "customTiers": {"Top\nMiddle\nBottom"},
+			"customCutoffs": {"1/3, 2/3"}, "proportional": {proportional}})
+	}
+	apply := func(proportional string) {
+		t.Helper()
+		if status, loc := c.post(base+"/display", thirds(proportional)); status != http.StatusSeeOther || strings.Contains(loc, "err=") {
+			t.Fatalf("applying %s-proportional tiers: %d, %s", proportional, status, loc)
+		}
+	}
+	// By rank, the three tied entries are one group, at 2/3, 1/3 and 0,
+	// and go where the middle one would.
+	apply("entry")
+	if got := c.plainTiers(base); !strings.HasPrefix(got, "Top (1): Alien\nMiddle (3): ") || !strings.HasSuffix(got, "\nBottom (0):") {
+		t.Errorf("entry-proportional tier list:\n%s", got)
+	}
+	// By rating, they share the lowest rating.
+	apply("rating")
+	if got := c.plainTiers(base); !strings.HasPrefix(got, "Top (1): Alien\nMiddle (0):\nBottom (3): ") {
+		t.Errorf("rating-proportional tier list:\n%s", got)
+	}
+	_, body := c.get(base + "/tiers")
+	for _, want := range []string{`<option value="rating" selected>rating-proportional</option>`,
+		`<title>Top: 33.3% of the rating range</title>`, "the tier&#39;s share of the range of ratings, from the lowest to the highest"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rating-proportional page lacks %q", want)
+		}
+	}
+	if d := c.load("films").Display; d.Proportional != "rating" {
+		t.Errorf("saved as %+v", d)
+	}
+	// The chart shows a change not yet applied as such.
+	if status, chart := c.get(base + "/chart?" + thirds("entry").Encode()); status != http.StatusOK ||
+		!strings.Contains(chart, "Not applied yet") || !strings.Contains(chart, "<title>Top: 33.3% of the list</title>") {
+		t.Errorf("chart for entry-proportional tiers, not applied: %d\n%s", status, chart)
+	}
+	if _, chart := c.get(base + "/chart?" + thirds("rating").Encode()); strings.Contains(chart, "Not applied yet") {
+		t.Errorf("chart for the tiers as they are:\n%s", chart)
+	}
+	// Entry-proportional, the default, is left out of the file.
+	apply("entry")
+	if d := c.load("films").Display; d.Proportional != "" {
+		t.Errorf("entry-proportional saved as %q", d.Proportional)
+	}
+	if status, _ := c.post(base+"/display", thirds("sideways")); status != http.StatusBadRequest {
+		t.Errorf("sideways-proportional tiers: %d", status)
+	}
+}
+
 func TestTierSizes(t *testing.T) {
 	_, c := start(t, t.TempDir())
 	base := c.newList("Letters", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J")

@@ -116,6 +116,8 @@ kbd {
 .note { padding: .6rem 1rem; border-radius: 8px; background: var(--accent-soft); margin: 0 0 1rem; }
 .note.error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 form.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+/* Room for a sentence, such as a list's question */
+form.inline input.wide { flex: 1 1 16rem; max-width: 32rem; min-width: 0; }
 
 /* Dialogs */
 dialog.confirm {

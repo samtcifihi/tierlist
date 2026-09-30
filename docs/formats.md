@@ -49,7 +49,7 @@ For example:
 
 **How many entries.** Every answer counts for both entries in it, and the ratings settle once the entries have about 3 answers each, so a list of n entries takes about 1.5 × n answers at least (150 for 100 entries), and more for a fine ranking.
 
-**A whole list in one step.** To have the model set up the list's name and tiers too, ask for a [list file](#list-files) instead, as in "…as a tierlist list file, with named tiers S, A, B, C and D", and paste it into **Import a list** on the start page. The rules above apply to its entries, and the list file's own rules to the rest.
+**A whole list in one step.** To have the model set up the list's name, its question and its tiers too, ask for a [list file](#list-files) instead, as in "…as a tierlist list file that asks "Which would you rather watch?", with named tiers S, A, B, C and D", and paste it into **Import a list** on the start page. The rules above apply to its entries, and the list file's own rules to the rest.
 
 ## Entries to add
 
@@ -161,6 +161,7 @@ For the whole file:
 | `format` | required | `"tierlist"` |
 | `version` | required | `1`. A file with a higher version, from a newer tierlist, is refused. |
 | `name` | required | The list's name, a string that isn't empty. |
+| `question` | optional | What the **Rate** tab asks about each pair, as in `"Which is funnier?"`. Left out, or `""`, it asks "Which is better?". |
 | `entries` | optional | The entries, as a list of [entry objects](#entry-objects); none if left out. |
 | `comparisons` | optional | The answers, oldest first, as a list of [answer objects](#answer-objects); none if left out. |
 | `focus` | optional | Focus mode's entries, while it is on: a list of entry IDs, each once, none of them removed. |
@@ -205,6 +206,7 @@ Both IDs must be entries in the file; removed entries count. The order of the an
 | `others` | optional | The options last used for the other kinds of template, to come back to: a list of template objects, at most one each of `"stars"`, `"named"` and `"custom"`, and none of the kind in `template`. Leave it out of a new file. |
 | `convention` | required | `"top-closed"`, which puts an entry exactly on a cut-off in the tier above it, or `"bottom-closed"`, which puts it in the tier below. |
 | `drawMargin` | optional | Entries whose ratings are at most this many points apart are grouped together, and each group goes into one tier: a number 0 or more, 0 if left out. |
+| `proportional` | optional | What a tier's share of `[0, 1]` is a share of: `"entry"` for the entries, counted by rank (the default, also meant when left out), or `"rating"` for the range of ratings, from the lowest to the highest. |
 | `groupRule` | required | How a group is placed: `"middle-entry"` (its middle entry decides) or `"alternate"` (its highest or lowest entry decides). |
 | `prefer` | required | `"higher"` or `"lower"`: which way a group goes when its middle entries fall in different tiers, or, with `"alternate"`, whether its highest or lowest entry decides. |
 
@@ -254,7 +256,7 @@ Sizes too extreme to work out are refused.
 
 ### A whole file
 
-A new list of three entries with named tiers, as a language model might write it:
+A new list of three entries with its own question and named tiers, as a language model might write it:
 
 <!-- check: list -->
 ```json
@@ -262,6 +264,7 @@ A new list of three entries with named tiers, as a language model might write it
   "format": "tierlist",
   "version": 1,
   "name": "Science fiction films",
+  "question": "Which would you rather watch?",
   "entries": [
     {"id": 1, "name": "Alien", "url": "https://en.wikipedia.org/wiki/Alien_(film)", "description": "Ridley Scott's horror film about a creature loose on a cargo ship, 1979."},
     {"id": 2, "name": "Blade Runner", "url": "https://en.wikipedia.org/wiki/Blade_Runner", "description": "Ridley Scott's neo-noir about a hunter of artificial humans, 1982."},

@@ -34,6 +34,22 @@ const (
 	Lower
 )
 
+// Positions chooses where on [0, 1] each entry of a ranked list stands, for
+// the template's cut-offs to split into tiers.
+type Positions int
+
+const (
+	// ByRank spaces the entries evenly by rank, the worst at 0 and the
+	// best at 1, so that each tier's share of [0, 1] is its share of the
+	// entries: the entry-proportional method.
+	ByRank Positions = iota
+	// ByRating puts each entry where its rating lies between the worst
+	// rating, at 0, and the best, at 1, so that each tier's share of
+	// [0, 1] is its share of the range of ratings, however many entries
+	// that holds: the rating-proportional method.
+	ByRating
+)
+
 // Options are the display options that decide how entries are grouped
 // and placed.
 type Options struct {
@@ -42,6 +58,13 @@ type Options struct {
 	DrawMargin float64
 	Rule       GroupRule
 	Prefer     Direction
+	Positions  Positions
+	// Tolerance, with ByRating, is how close a rating must be to a
+	// cut-off's rating to count as on it, so that the convention decides
+	// its tier as for a rating exactly there, whichever way rounding
+	// tipped it. If the ratings all lie within Tolerance of each other,
+	// every entry stands at 1/2.
+	Tolerance float64
 }
 
 func (o Options) validate() error {
@@ -54,12 +77,21 @@ func (o Options) validate() error {
 	if o.Prefer != Higher && o.Prefer != Lower {
 		return fmt.Errorf("unknown direction %d", o.Prefer)
 	}
+	if o.Positions != ByRank && o.Positions != ByRating {
+		return fmt.Errorf("unknown positions %d", o.Positions)
+	}
+	if !(o.Tolerance >= 0) {
+		return fmt.Errorf("the tolerance must be 0 or more, not %v", o.Tolerance)
+	}
 	return nil
 }
 
 // Place assigns each entry of a ranked list to a tier of t. ratings holds
-// the entries' Bayes Elo ratings from best to worst. The result holds, in
-// the same order, the index in t.Tiers of each entry's tier.
+// the entries' Bayes Elo ratings from best to worst. Each entry would go
+// alone in the tier holding its position (see Positions), and each group
+// of entries within the draw-margin of each other goes into one tier, as
+// o's rule says. The result holds, in the same order as ratings, the
+// index in t.Tiers of each entry's tier.
 func Place(ratings []float64, t Template, o Options) ([]int, error) {
 	if err := t.Validate(); err != nil {
 		return nil, err
@@ -83,7 +115,7 @@ func Place(ratings []float64, t Template, o Options) ([]int, error) {
 	// alone[i] is the tier entry i would go in by its position alone.
 	alone := make([]int, n)
 	for i := range alone {
-		alone[i] = t.TierAt(big.NewRat(int64(n-1-i), int64(n-1)))
+		alone[i] = t.TierAt(o.position(ratings, i, t.Cutoffs))
 	}
 
 	placed := make([]int, n)
@@ -99,6 +131,27 @@ func Place(ratings []float64, t Template, o Options) ([]int, error) {
 		start = end
 	}
 	return placed, nil
+}
+
+// position returns where entry i of the ranked list stands on [0, 1] (see
+// Positions), for the template with the given cut-offs.
+func (o Options) position(ratings []float64, i int, cutoffs []*big.Rat) *big.Rat {
+	n := len(ratings)
+	if o.Positions == ByRank {
+		return big.NewRat(int64(n-1-i), int64(n-1))
+	}
+	worst, span := ratings[n-1], ratings[0]-ratings[n-1]
+	if span <= o.Tolerance {
+		return big.NewRat(1, 2)
+	}
+	for _, c := range cutoffs {
+		f, _ := c.Float64()
+		if math.Abs(ratings[i]-(worst+f*span)) <= o.Tolerance {
+			return c
+		}
+	}
+	// Between the worst rating and the best, this lies in [0, 1].
+	return new(big.Rat).SetFloat64((ratings[i] - worst) / span)
 }
 
 // groupTier returns the tier for a group whose members, best first, would

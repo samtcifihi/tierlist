@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/samtcifihi/tierlist/internal/bayeselo"
@@ -609,6 +610,103 @@ func TestTiers(t *testing.T) {
 	}
 	if _, err := mustNew(t, "One", "A").Tiers(); !errors.Is(err, tier.ErrTooFewEntries) {
 		t.Errorf("one entry: error %v, want tier.ErrTooFewEntries", err)
+	}
+}
+
+func TestQuestion(t *testing.T) {
+	l := mustNew(t, "Films", "Alien", "Brazil")
+	if got := l.Asks(); got != "Which is better?" {
+		t.Errorf("a new list asks %q", got)
+	}
+	l.SetQuestion("  Which is funnier? ")
+	if l.Question != "Which is funnier?" || l.Asks() != "Which is funnier?" {
+		t.Errorf("question %q, asks %q", l.Question, l.Asks())
+	}
+	path := filepath.Join(t.TempDir(), "films.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if l2, err := Load(path); err != nil || l2.Asks() != "Which is funnier?" {
+		t.Errorf("loaded %+v, %v", l2, err)
+	}
+	// An empty question means the default one, and isn't written.
+	l.SetQuestion(" ")
+	if data, err := l.encode(); err != nil || l.Asks() != "Which is better?" || strings.Contains(string(data), "question") {
+		t.Errorf("with no question of its own, asks %q, written as:\n%s", l.Asks(), data)
+	}
+}
+
+// Alien beats the other three, which are all about the same as each
+// other: by rank they spread over [0, 1], but by rating they share the
+// lowest rating, far below Alien's.
+func TestRatingProportional(t *testing.T) {
+	l := mustNew(t, "Films", "Alien", "Brazil", "Casablanca", "Dune")
+	for _, id := range []int{2, 3, 4} {
+		mustRecord(t, l, 1, id, FirstBetter)
+	}
+	mustRecord(t, l, 2, 3, AboutSame)
+	mustRecord(t, l, 3, 4, AboutSame)
+	mustRecord(t, l, 4, 2, AboutSame)
+	l.Display.Template = Template{Kind: "custom", Name: "Thirds", Tiers: []string{"Top", "Middle", "Bottom"}, Cutoffs: []string{"1/3", "2/3"}}
+	tiers := func() string {
+		t.Helper()
+		rows, err := l.Tiers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, row := range rows {
+			ids := slices.Clone(row.Entries)
+			slices.Sort(ids) // the three are tied, in whatever order rounding left them
+			out = append(out, fmt.Sprintf("%s %v", row.Name, ids))
+		}
+		return strings.Join(out, ", ")
+	}
+	// By rank, the three tied entries are one group at 2/3, 1/3 and 0,
+	// which goes where its middle entry would: the middle tier.
+	if got := tiers(); got != "Top [1], Middle [2 3 4], Bottom []" {
+		t.Errorf("entry-proportional: %s", got)
+	}
+	l.Display.Proportional = "rating"
+	if got := tiers(); got != "Top [1], Middle [], Bottom [2 3 4]" {
+		t.Errorf("rating-proportional: %s", got)
+	}
+	// Saved and loaded, the choice stays; entry-proportional is the
+	// default, and not written.
+	path := filepath.Join(t.TempDir(), "films.json")
+	if err := l.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if l2, err := Load(path); err != nil || !l2.Display.ByRating() {
+		t.Errorf("loaded %+v, %v; want rating-proportional", l2.Display, err)
+	}
+	l.Display.Proportional = ""
+	if data, err := l.encode(); err != nil || strings.Contains(string(data), "proportional") {
+		t.Errorf("entry-proportional written as:\n%s", data)
+	}
+	l.Display.Proportional = "entry"
+	if got := tiers(); got != "Top [1], Middle [2 3 4], Bottom []" {
+		t.Errorf("entry-proportional, named: %s", got)
+	}
+	l.Display.Proportional = "ratings"
+	if err := l.Display.Check(); err == nil {
+		t.Error(`proportional "ratings": want an error`)
+	}
+
+	// Entries all about the same as each other are rated the same in
+	// theory, though rounding can leave them a hair apart; they stand at
+	// 1/2, as do entries with no answers at all.
+	l = mustNew(t, "Letters", "A", "B", "C")
+	l.Display = Display{Template: Template{Kind: "custom", Name: "Thirds", Tiers: []string{"Top", "Middle", "Bottom"}, Cutoffs: []string{"1/3", "2/3"}},
+		Convention: "top-closed", GroupRule: "alternate", Prefer: "higher", Proportional: "rating"}
+	if got := tiers(); got != "Top [], Middle [1 2 3], Bottom []" {
+		t.Errorf("rating-proportional with no answers: %s", got)
+	}
+	mustRecord(t, l, 1, 2, AboutSame)
+	mustRecord(t, l, 2, 3, AboutSame)
+	mustRecord(t, l, 3, 1, AboutSame)
+	if got := tiers(); got != "Top [], Middle [1 2 3], Bottom []" {
+		t.Errorf("rating-proportional, all about the same: %s", got)
 	}
 }
 

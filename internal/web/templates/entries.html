@@ -69,6 +69,13 @@
   <button>Rename</button>
 </form>
 
+<h2>Question</h2>
+<p class="muted small">What the rating page asks about each pair, such as “Which is funnier?” or “Which is more useful?”. Left empty, it asks “{{.DefaultQuestion}}”</p>
+<form method="post" action="{{.List.URL}}/question" class="inline">
+  <input name="question" class="wide" value="{{.Question}}" placeholder="{{.DefaultQuestion}}" aria-label="Question" autocomplete="off">
+  <button>Save</button>
+</form>
+
 <h2>Reset or delete</h2>
 <p class="muted small">Resetting deletes every answer but keeps the entries, so rating starts over. Deleting removes the whole list.</p>
 <div class="actions">

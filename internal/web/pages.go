@@ -118,6 +118,15 @@ func (s *Server) renameList(w http.ResponseWriter, r *http.Request, ol *openList
 	back(w, r, entries, "Renamed the list.", "")
 }
 
+// setQuestion sets what the rating page asks about each pair.
+func (s *Server) setQuestion(w http.ResponseWriter, r *http.Request, ol *openList) {
+	ol.list.SetQuestion(r.FormValue("question"))
+	if !s.saved(w, ol) {
+		return
+	}
+	back(w, r, listURL(ol.key)+"/entries", "The rating page now asks “"+ol.list.Asks()+"”", "")
+}
+
 // deleteList deletes a list's file. It does not need to open the list
 // first, so a damaged file can be deleted too.
 func (s *Server) deleteList(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +186,7 @@ type rateView struct {
 	Draw          string // the draw setting, as a percentage
 	Levels        levelsReadout
 	Focus         []string // names of the entries in focus mode
+	Question      string   // what to ask about the pair
 }
 
 // token counts the answers and ignores in the list. A form from the rating
@@ -189,7 +199,7 @@ func token(l *tierlist.List) int {
 func (s *Server) rate(w http.ResponseWriter, r *http.Request, ol *openList) {
 	l := ol.list
 	names := entryNames(l)
-	v := rateView{view: s.view(r, "rate", ol), Answers: len(l.Comparisons), Token: token(l)}
+	v := rateView{view: s.view(r, "rate", ol), Answers: len(l.Comparisons), Token: token(l), Question: l.Asks()}
 	for _, id := range l.Focus {
 		v.Focus = append(v.Focus, names[id])
 	}
@@ -555,9 +565,12 @@ type entriesView struct {
 	Ignoring string // what is ignored, in words, or ""
 	JSON     string // the shown entries as JSON, to copy
 	JSONRows int    // lines for its text box, with room for a scroll bar
-	Answers  int
-	Reset    confirm
-	Delete   confirm
+	// Question is the list's own question for the rating page, or "",
+	// which means DefaultQuestion.
+	Question, DefaultQuestion string
+	Answers                   int
+	Reset                     confirm
+	Delete                    confirm
 }
 
 type entryRow struct {
@@ -587,6 +600,7 @@ func (s *Server) showEntries(w http.ResponseWriter, r *http.Request, ol *openLis
 	}
 	counts := l.Counts()
 	v := entriesView{view: s.view(r, "entries", ol), AddText: addText, Focus: len(l.Focus) > 0, Answers: len(l.Comparisons),
+		Question: l.Question, DefaultQuestion: tierlist.DefaultQuestion,
 		Reset: confirm{ID: "reset-list", Action: listURL(ol.key) + "/reset", Title: "Reset “" + l.Name + "”?",
 			Text:   fmt.Sprintf("Its %s will be deleted. The entries stay, and their ratings start over at 1500.", plural(len(l.Comparisons), "answer", "answers")),
 			Button: "Reset"},
@@ -881,6 +895,8 @@ type displayForm struct {
 	DrawMargin  string
 	GroupRule   string
 	Prefer      string
+	// Proportional is "entry" or "rating" (see tierlist.Display).
+	Proportional string
 }
 
 // A sizesForm holds tier sizes as the form shows them, for a kind of
@@ -920,7 +936,7 @@ func formFor(d tierlist.Display) displayForm {
 		Kind: d.Template.Kind, MaxStars: "10", Divisions: "1", CustomName: "Custom",
 		Stars: newSizesForm(""), Named: newSizesForm("named-"),
 		Convention: d.Convention, DrawMargin: strconv.FormatFloat(d.DrawMargin, 'f', -1, 64),
-		GroupRule: d.GroupRule, Prefer: d.Prefer,
+		GroupRule: d.GroupRule, Prefer: d.Prefer, Proportional: cmp.Or(d.Proportional, "entry"),
 	}
 	if t, ok := d.Remembered("stars"); ok {
 		f.MaxStars, f.SkipZero, f.Divisions = strconv.Itoa(t.MaxStars), t.SkipZero, strconv.Itoa(max(t.Divisions, 1))
@@ -962,7 +978,7 @@ func (s *Server) showTiers(w http.ResponseWriter, r *http.Request, ol *openList,
 		v.Error = formErr
 	}
 	if shape, err := l.Display.Shape(); err == nil {
-		chart := shapeChart(shape, l.Display.Template.Kind == "stars")
+		chart := shapeChart(shape, l.Display.Template.Kind == "stars", l.Display.ByRating())
 		v.Chart = &chart
 	}
 	rows, err := l.Tiers()
@@ -1030,7 +1046,7 @@ func (s *Server) setDisplay(w http.ResponseWriter, r *http.Request, ol *openList
 // they make a usable template, or else the ones old had, if any.
 func parseDisplay(r *http.Request, old tierlist.Display) (tierlist.Display, displayForm, error) {
 	f := readDisplayForm(r)
-	d := tierlist.Display{Convention: f.Convention, GroupRule: f.GroupRule, Prefer: f.Prefer}
+	d := tierlist.Display{Convention: f.Convention, GroupRule: f.GroupRule, Prefer: f.Prefer, Proportional: f.proportional()}
 	margin, err := strconv.ParseFloat(f.DrawMargin, 64)
 	if err != nil || !(margin >= 0) || math.IsInf(margin, 1) {
 		return d, f, errors.New("the draw-margin must be a number, 0 or more")
@@ -1064,7 +1080,7 @@ func readDisplayForm(r *http.Request) displayForm {
 		CustomName: strings.TrimSpace(r.FormValue("customName")), CustomTiers: r.FormValue("customTiers"),
 		CustomCutoffs: r.FormValue("customCutoffs"), Convention: r.FormValue("convention"),
 		DrawMargin: strings.TrimSpace(r.FormValue("drawMargin")), GroupRule: r.FormValue("groupRule"),
-		Prefer: r.FormValue("prefer"),
+		Prefer: r.FormValue("prefer"), Proportional: r.FormValue("proportional"),
 	}
 }
 
@@ -1080,6 +1096,15 @@ func readSizes(r *http.Request, prefix string) sizesForm {
 
 // template reads the template the form chooses.
 func (f displayForm) template() (tierlist.Template, error) { return f.templateOf(f.Kind) }
+
+// proportional returns the form's choice of what tiers are proportional to
+// as a list saves it: entry-proportional, the default, is left unsaid.
+func (f displayForm) proportional() string {
+	if f.Proportional == "entry" {
+		return ""
+	}
+	return f.Proportional
+}
 
 // templateOf reads the form's fields for templates of the given kind. It
 // does not check that the template can be built; Display.Check does.

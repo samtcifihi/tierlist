@@ -47,8 +47,15 @@ type chartPart struct {
 }
 
 // shapeChart lays out the chart of s. Star tiers get a ★ after their
-// names.
-func shapeChart(s tierlist.Shape, stars bool) chartView {
+// names. byRating says the tiers are rating-proportional, so that a tier's
+// share is of the range of ratings rather than of the list.
+func shapeChart(s tierlist.Shape, stars, byRating bool) chartView {
+	// What a tier's share is of, briefly for its title and in full for
+	// the caption.
+	of, ofInFull := "the list", "the list"
+	if byRating {
+		of, ofInFull = "the rating range", "the range of ratings, from the lowest to the highest"
+	}
 	n := len(s.Shares)
 	// A step for each tier: the area over its part is its share.
 	var xs, ys []float64
@@ -108,10 +115,10 @@ func shapeChart(s tierlist.Shape, stars bool) chartView {
 				name += "★"
 			}
 			v.Parts = append(v.Parts, chartPart{X: coord(chartSize * float64(k) / float64(n)), Width: coord(chartSize / float64(n)),
-				Title: fmt.Sprintf("%s: %.3g%% of the list", name, 100*share)})
+				Title: fmt.Sprintf("%s: %.3g%% of %s", name, 100*share, of)})
 		}
 	}
-	v.Caption = "Each tier gets an equal slice of [0, 1], worst on the left, and the area above the slice is the tier's share of the list, so the total area is 1. The dashed line is the height of tiers all the same size."
+	v.Caption = "Each tier gets an equal slice of [0, 1], worst on the left, and the area above the slice is the tier's share of " + ofInFull + ", so the total area is 1. The dashed line is the height of tiers all the same size."
 	if curve {
 		v.Caption = fmt.Sprintf("The Beta(%s, %s) density. ", strconv.FormatFloat(s.Alpha, 'g', -1, 64), strconv.FormatFloat(s.Beta, 'g', -1, 64)) + v.Caption
 	}
@@ -166,15 +173,17 @@ func (s *Server) chart(w http.ResponseWriter, r *http.Request, ol *openList) {
 	f := readDisplayForm(r)
 	t, err := f.template()
 	var shape tierlist.Shape
+	d := tierlist.Display{Template: t, Convention: f.Convention, Proportional: f.proportional()}
 	if err == nil {
-		shape, err = tierlist.Display{Template: t, Convention: f.Convention}.Shape()
+		shape, err = d.Shape()
 	}
 	if err != nil {
 		http.Error(w, sentence(err.Error()), http.StatusUnprocessableEntity)
 		return
 	}
-	v := shapeChart(shape, t.Kind == "stars")
-	v.Preview = !sameTemplate(t, ol.list.Display.Template)
+	saved := ol.list.Display
+	v := shapeChart(shape, t.Kind == "stars", d.ByRating())
+	v.Preview = !sameTemplate(t, saved.Template) || d.ByRating() != saved.ByRating()
 	var b bytes.Buffer
 	if err := s.pages["tiers"].ExecuteTemplate(&b, "chart", v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
