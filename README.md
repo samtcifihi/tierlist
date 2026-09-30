@@ -34,6 +34,8 @@ Entries are added in a box on the entries page, one title a line, or as JSON to 
 
 A name already in the list, in any case, doesn't add a second entry: it updates the one there, which keeps its ID, answers and rating. A `url` or `description` given replaces the old one, even `""`, which clears it; one left out stays as it was, so a name alone changes nothing.
 
+[docs/formats.md](docs/formats.md) gives the exact formats of entries and list files, for writing them elsewhere: by hand, by another program, or by a language model, with rules and a prompt for the last.
+
 The pages show the details with the entries: on the rating page, the description under each entry's title, cut to three lines (the rest on hover), and the link in the corner of its box; on the entries page, the link beside the title and the description under it; and in the tier list, each entry's chip links to its page and shows its description on hover.
 
 Removing an entry hides it: it leaves the tier list, focus mode and new comparisons, but its answers still count toward the other entries' ratings. (If A beat X and X beat B, that still says A is better than B.) A removed entry can be restored.
@@ -195,7 +197,7 @@ Loading that state must be enough to continue rating where a previous session le
 
 Each tier list is saved as one JSON file, by default in a `tierlist` folder in the user's configuration folder (`%AppData%\tierlist` on Windows). The start page can show any list's file to copy (Export), even one that can't be opened as a list, so its text can be rescued, and can save pasted file text as a new list (Import). An import never replaces a list: if one with the same name is already there, the copy's name gets a number, as in "Films (2)". The file name comes from the list's name: its letters and digits in lower case, joined by hyphens, with a number added if the name is taken. Renaming the list later does not rename the file.
 
-A list file holds:
+A list file holds (see [docs/formats.md](docs/formats.md#list-files) for every key and what it may hold):
 
 - the list's name
 - the entries, each with a name and a stable ID, so answers keep pointing at the right entry as the list changes, and any link and description
@@ -208,6 +210,7 @@ A list file holds:
 
 For example:
 
+<!-- check: list -->
 ```json
 {
   "format": "tierlist",
