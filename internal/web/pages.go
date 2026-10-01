@@ -23,12 +23,13 @@ type libraryView struct {
 	Dir        string
 	Lists      []listSummary
 	ImportText string // what the box for importing a list holds
+	ImportInto string // the list to import into, by key, or "" for a new list
 }
 
 type listSummary struct {
-	Name, URL, File, Modified, Err string
-	Entries, Answers               int
-	Delete                         confirm
+	Key, Name, URL, File, Modified, Err string
+	Entries, Answers                    int
+	Delete                              confirm
 }
 
 // A confirm is a dialog that asks before deleting something, since that
@@ -53,26 +54,27 @@ func deleteDialog(id, url, name string, entries, answers int) confirm {
 }
 
 func (s *Server) library(w http.ResponseWriter, r *http.Request) {
-	s.showLibrary(w, r, "", "", http.StatusOK)
+	s.showLibrary(w, r, "", "", "", http.StatusOK)
 }
 
 // showLibrary renders the start page, with importText in the box for
 // importing a list and errText as an error, when that text couldn't be
 // imported.
-func (s *Server) showLibrary(w http.ResponseWriter, r *http.Request, importText, errText string, status int) {
+func (s *Server) showLibrary(w http.ResponseWriter, r *http.Request, importText, importInto, errText string, status int) {
 	sums, err := tierlist.Lists(s.dir)
 	if err != nil {
 		s.message(w, http.StatusInternalServerError, "Your lists can't be read", err.Error())
 		return
 	}
-	v := libraryView{view: s.view(r, "library", nil), Dir: s.dir, ImportText: importText}
+	v := libraryView{view: s.view(r, "library", nil), Dir: s.dir, ImportText: importText, ImportInto: importInto}
 	if errText != "" {
 		v.Error = errText
 	}
 	for k, sm := range sums {
 		file := filepath.Base(sm.Path)
+		key := strings.TrimSuffix(file, ".json")
 		item := listSummary{
-			Name: sm.Name, URL: listURL(strings.TrimSuffix(file, ".json")), File: file,
+			Key: key, Name: sm.Name, URL: listURL(key), File: file,
 			Entries: sm.Entries, Answers: sm.Comparisons, Modified: sm.Modified.Format("2 Jan 2006, 15:04"),
 		}
 		id := fmt.Sprintf("delete-%d", k+1)
@@ -568,9 +570,13 @@ type entriesView struct {
 	// Question is the list's own question for the rating page, or "",
 	// which means DefaultQuestion.
 	Question, DefaultQuestion string
-	Answers                   int
-	Reset                     confirm
-	Delete                    confirm
+	// Forget and Merge, if set, are the dialog the page opens with (see
+	// askDialog).
+	Forget  *forgetDialog
+	Merge   *mergeDialog
+	Answers int
+	Reset   confirm
+	Delete  confirm
 }
 
 type entryRow struct {
@@ -582,6 +588,7 @@ type entryRow struct {
 	SD          string
 	Answers     int
 	Focused     bool
+	Ticked      bool // ticked on the page: in focus, or chosen for a dialog
 	Ignored     bool
 }
 
@@ -609,6 +616,7 @@ func (s *Server) showEntries(w http.ResponseWriter, r *http.Request, ol *openLis
 		row := entryRow{
 			ID: e.ID, Name: e.Name, URL: e.URL, Description: e.Description,
 			Answers: counts[e.ID], Focused: slices.Contains(l.Focus, e.ID), Ignored: l.EntryIgnored(e.ID),
+			Ticked: slices.Contains(l.Focus, e.ID),
 			Rating: fmt.Sprintf("%.0f", fit.Points(e.ID)), SD: fmt.Sprintf("± %.0f", fit.PointsSD(e.ID)),
 		}
 		if e.Removed {
@@ -620,6 +628,7 @@ func (s *Server) showEntries(w http.ResponseWriter, r *http.Request, ol *openLis
 	slices.SortStableFunc(v.Shown, func(a, b entryRow) int { return cmp.Compare(fit.Rating(b.ID), fit.Rating(a.ID)) })
 	v.Ignoring = ignoring(l)
 	v.JSON, v.JSONRows = entriesJSON(v.Shown), min(len(v.Shown)+3, 20)
+	askDialog(&v, l, r.URL.Query())
 	if errText != "" {
 		v.Error = errText
 	}

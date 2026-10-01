@@ -28,9 +28,16 @@
 <details class="disclosure import"{{if .ImportText}} open{{end}}>
   <summary>Import a list</summary>
   <form method="post" action="/lists/import">
-    <label for="import-data" class="muted small">Paste the text of a list's file here, as Export shows it on this or another copy of tierlist. It is added as a new list; a list already here is never replaced.</label>
+    <label for="import-data" class="muted small">Paste the text of a list's file here, as Export shows it on this or another copy of tierlist. It is added as a new list, or into one of yours, which keeps its own name, question, display options, focus and ignores and gains the imported entries with their answers. An imported entry whose name the list has already gets a number, as in “Alien (1)”, to merge on its Entries page if it's the same.</label>
     <textarea id="import-data" name="data" rows="8" required wrap="off" autocomplete="off">{{.ImportText}}</textarea>
-    <button class="primary">Import</button>
+    <div class="inline">
+      <label for="import-into">Import</label>
+      <select id="import-into" name="into">
+        <option value="">as a new list</option>
+        {{range .Lists}}{{if not .Err}}<option value="{{.Key}}"{{if eq .Key $.ImportInto}} selected{{end}}>into {{.Name}}</option>{{end}}{{end}}
+      </select>
+      <button class="primary">Import</button>
+    </div>
   </form>
 </details>
 <p class="muted small">Lists are saved in {{.Dir}}</p>

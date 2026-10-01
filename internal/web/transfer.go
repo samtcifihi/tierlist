@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,16 +47,48 @@ func (s *Server) exportList(w http.ResponseWriter, r *http.Request) {
 }
 
 // importList saves a list pasted as the text of its file, as Export shows
-// it, as a new list; it never replaces one (see tierlist.Import). If the
-// text isn't a list, the start page shows it again with the reason.
+// it, as a new list, which never replaces one (see tierlist.Import), or
+// into the list the form chooses (see importInto). If the text isn't a
+// list, the start page shows it again with the reason.
 func (s *Server) importList(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	text := r.FormValue("data")
+	text, into := r.FormValue("data"), r.FormValue("into")
+	if into != "" {
+		s.importInto(w, r, text, into)
+		return
+	}
 	_, l, err := tierlist.Import(s.dir, []byte(text))
 	if err != nil {
-		s.showLibrary(w, r, text, sentence("that can't be imported: "+err.Error()), http.StatusBadRequest)
+		s.showLibrary(w, r, text, into, sentence("that can't be imported: "+err.Error()), http.StatusBadRequest)
 		return
 	}
 	back(w, r, "/", "Imported “"+l.Name+"”.", "")
+}
+
+// importInto adds the entries of the list in text, with their answers, to
+// the list saved under key, which keeps its own settings (see
+// tierlist.List.ImportEntries), and shows its entries.
+func (s *Server) importInto(w http.ResponseWriter, r *http.Request, text, key string) {
+	ol, err := s.open(key)
+	if err != nil {
+		s.showLibrary(w, r, text, "", sentence("there is no list to import into: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	other, err := tierlist.Parse([]byte(text))
+	if err != nil {
+		s.showLibrary(w, r, text, key, sentence("that can't be imported: "+err.Error()), http.StatusBadRequest)
+		return
+	}
+	renamed, k := ol.list.ImportEntries(other)
+	if !s.saved(w, ol) {
+		return
+	}
+	ol.replan()
+	msg := fmt.Sprintf("Imported %s and %s from “%s”.", plural(len(other.Entries), "entry", "entries"),
+		plural(len(other.Comparisons), "answer", "answers"), other.Name)
+	if renamed > 0 {
+		msg += fmt.Sprintf(" %s whose %s taken got “ (%d)” added.", plural(renamed, "entry", "entries"), agree(renamed, "name was", "names were"), k)
+	}
+	back(w, r, listURL(ol.key)+"/entries", msg, "")
 }

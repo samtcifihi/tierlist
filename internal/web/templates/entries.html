@@ -14,7 +14,7 @@
 <ul class="entries">
   {{range .Shown}}
   <li>
-    <input type="checkbox" form="focus" name="focus" value="{{.ID}}" aria-label="Focus on {{.Name}}"{{if .Focused}} checked{{end}}>
+    <input type="checkbox" form="focus" name="focus" value="{{.ID}}" aria-label="Tick {{.Name}}"{{if .Ticked}} checked{{end}}>
     <div class="entry-name">
       <form method="post" action="{{$.List.URL}}/entries/{{.ID}}/rename" class="rename">
         <input name="name" value="{{.Name}}" required aria-label="Name" autocomplete="off">
@@ -33,7 +33,48 @@
 <div class="actions">
   <button form="focus" name="do" value="set">Focus on ticked</button>
   {{if .Focus}}<button form="focus" name="do" value="clear">Leave focus mode</button>{{end}}
+  <button form="focus" formaction="{{.List.URL}}/entries" formmethod="get" name="ask" value="merge" title="Make the ticked entries one entry, with all their answers">Merge ticked…</button>
+  <button form="focus" formaction="{{.List.URL}}/entries" formmethod="get" name="ask" value="forget" title="Delete every answer about the ticked entries, so that they start over">Forget answers about ticked…</button>
 </div>
+{{with .Forget}}
+<dialog id="forget" class="confirm" aria-labelledby="forget-title" open data-modal>
+  <form method="post" action="{{$.List.URL}}/entries/forget">
+    {{range .IDs}}<input type="hidden" name="id" value="{{.}}">{{end}}
+    <h2 id="forget-title">Forget the answers about {{.Names}}?</h2>
+    <p>{{.Text}}</p>
+    <p class="warning">This can't be undone.</p>
+    <div class="actions">
+      <button formmethod="dialog" autofocus>Cancel</button>
+      <button class="danger">Forget {{plural .Answers "answer" "answers"}}</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
+{{with .Merge}}
+<dialog id="merge" class="confirm merge" aria-labelledby="merge-title" open data-modal>
+  <form method="post" action="{{$.List.URL}}/entries/merge">
+    {{range .IDs}}<input type="hidden" name="id" value="{{.}}">{{end}}
+    <h2 id="merge-title">Merge {{.Names}}?</h2>
+    <p>They become one entry, with all their answers{{if .Answers}} apart from the {{plural .Answers "answer" "answers"}} between them, which go{{end}}. Choose what it keeps:</p>
+    {{range $field := .Fields}}
+    <fieldset>
+      <legend>{{$field.Label}}</legend>
+      {{if eq (len $field.Options) 1}}{{with index $field.Options 0}}
+      <input type="hidden" name="{{$field.Key}}" value="{{.Entry}}">
+      <p class="merge-value">{{if .Value}}{{.Value}}{{else}}<span class="muted">none</span>{{end}}</p>
+      {{end}}{{else}}{{range $field.Options}}
+      <label class="check"><input type="radio" name="{{$field.Key}}" value="{{.Entry}}"{{if .Checked}} checked{{end}}> <span class="merge-value">{{if .Value}}{{.Value}}{{else}}<span class="muted">none</span>{{end}}</span></label>
+      {{end}}{{end}}
+    </fieldset>
+    {{end}}
+    <p class="warning">This can't be undone.</p>
+    <div class="actions">
+      <button formmethod="dialog" autofocus>Cancel</button>
+      <button class="danger">Merge</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
 {{with .Ignoring}}
 <form method="post" action="{{$.List.URL}}/ignores/reset" class="inline ignoring">
   <span class="muted small">{{.}} They aren't asked about until you reset ignores.</span>

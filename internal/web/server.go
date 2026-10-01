@@ -185,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /lists/{list}/ignores/reset", s.withList(s.resetIgnores))
 	mux.HandleFunc("GET /lists/{list}/entries", s.withList(s.entries))
 	mux.HandleFunc("POST /lists/{list}/entries", s.withList(s.addEntries))
+	mux.HandleFunc("POST /lists/{list}/entries/forget", s.withList(s.forgetAnswers))
+	mux.HandleFunc("POST /lists/{list}/entries/merge", s.withList(s.mergeEntries))
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/rename", s.withList(s.renameEntry))
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/remove", s.withList(s.removeEntry))
 	mux.HandleFunc("POST /lists/{list}/entries/{id}/restore", s.withList(s.restoreEntry))

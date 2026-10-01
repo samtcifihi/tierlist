@@ -40,6 +40,9 @@ func Load(path string) (*List, error) {
 	return l, nil
 }
 
+// Parse reads a list from the text of its file, as Save writes it.
+func Parse(data []byte) (*List, error) { return decode(data) }
+
 func decode(data []byte) (*List, error) {
 	f := file{List: &List{}}
 	dec := json.NewDecoder(bytes.NewReader(data))

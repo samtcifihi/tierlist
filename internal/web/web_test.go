@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1481,6 +1482,178 @@ func TestRememberedTemplates(t *testing.T) {
 	}
 	if d := c.load("others").Display; len(d.Others) != 0 {
 		t.Errorf("a new list keeps options: %+v", d.Others)
+	}
+}
+
+// exported returns the text of the file of the list at base, as its
+// export page shows it.
+func (c *client) exported(base string) string {
+	c.t.Helper()
+	_, body := c.get(base + "/export")
+	m := regexp.MustCompile(`(?s)<textarea class="file-text"[^>]*>(.*?)</textarea>`).FindStringSubmatch(body)
+	if m == nil {
+		c.t.Fatalf("export page:\n%s", body)
+	}
+	return html.UnescapeString(m[1])
+}
+
+// A list can be imported into another, which gains its entries and their
+// answers and keeps its own settings.
+func TestImportInto(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	films := c.newList("Films", "Alien", "Brazil (1)")
+	c.answer(films, 1, 2, 0, "a")
+	c.post(films+"/question", url.Values{"question": {"Which would you rather watch?"}})
+	home := c.newList("Home", `[{"name": "alien", "description": "Sci-fi horror"}, "Dune", "Eraserhead (2)"]`)
+	c.answer(home, 1, 2, 0, "b")
+	c.answer(home, 2, 3, 1, "same")
+	text := c.exported(home)
+
+	if _, body := c.get("/"); !strings.Contains(body, `<option value="films">into Films</option>`) || !strings.Contains(body, `<option value="home">into Home</option>`) {
+		t.Errorf("no lists to import into on the start page:\n%s", body)
+	}
+	// alien is taken, in any case, and names end in (1) and (2) already.
+	status, loc := c.post("/lists/import", url.Values{"data": {text}, "into": {"films"}})
+	if status != http.StatusSeeOther || !strings.HasPrefix(loc, "/lists/films/entries?msg=") ||
+		!strings.Contains(loc, url.QueryEscape("Imported 3 entries and 2 answers from “Home”. 1 entry whose name was taken got “ (3)” added.")) {
+		t.Errorf("importing Home into Films: %d, %s", status, loc)
+	}
+	l := c.load("films")
+	var names []string
+	for _, e := range l.Entries {
+		names = append(names, e.Name)
+	}
+	if !slices.Equal(names, []string{"Alien", "Brazil (1)", "alien (3)", "Dune", "Eraserhead (2)"}) || l.Entries[2].Description != "Sci-fi horror" ||
+		!slices.Equal(l.Comparisons, []tierlist.Comparison{{A: 3, B: 4, Answer: "b"}, {A: 4, B: 5, Answer: "same"}, {A: 1, B: 2, Answer: "a"}}) ||
+		l.Asks() != "Which would you rather watch?" {
+		t.Errorf("Films after the import: %q, %v, asks %q", names, l.Comparisons, l.Asks())
+	}
+	if len(c.load("home").Entries) != 3 {
+		t.Error("the imported list changed")
+	}
+	// Text that isn't a list changes nothing, and the start page shows it
+	// again, still to go into the same list.
+	status, body := func() (int, string) {
+		req, _ := http.NewRequest("POST", c.srv.URL+"/lists/import", strings.NewReader(url.Values{"data": {"{}"}, "into": {"films"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		status, _, body := c.do(req)
+		return status, body
+	}()
+	if status != http.StatusBadRequest || !strings.Contains(body, "That can&#39;t be imported") || !strings.Contains(body, `<option value="films" selected>into Films</option>`) ||
+		len(c.load("films").Entries) != 5 {
+		t.Errorf("importing {} into Films: %d\n%s", status, body)
+	}
+	if status, _ := c.post("/lists/import", url.Values{"data": {text}, "into": {"nowhere"}}); status != http.StatusBadRequest {
+		t.Errorf("importing into a missing list: %d", status)
+	}
+	// As a new list, as before.
+	if _, loc := c.post("/lists/import", url.Values{"data": {text}, "into": {""}}); !strings.Contains(loc, "Imported+%E2%80%9CHome+%282%29%E2%80%9D") {
+		t.Errorf("importing Home as a new list: %s", loc)
+	}
+}
+
+// The answers about ticked entries can be forgotten, after a dialog says
+// how many there are.
+func TestForgetAnswersPage(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", "Alien", "Brazil", "Casablanca", "Dune")
+	c.answer(base, 1, 2, 0, "a")
+	c.answer(base, 2, 3, 1, "a")
+	c.answer(base, 3, 4, 2, "a")
+	c.answer(base, 1, 4, 3, "b")
+	_, body := c.get(base + "/entries?ask=forget&focus=2&focus=9")
+	for _, want := range []string{`<dialog id="forget" class="confirm" aria-labelledby="forget-title" open data-modal>`,
+		"Forget the answers about Brazil?", "Every answer about Brazil goes, 2 answers in all, whatever it was compared with, and its rating starts again at 1500.",
+		`<input type="hidden" name="id" value="2">`,
+		`value="2" aria-label="Tick Brazil" checked>`, "Forget 2 answers</button>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("forget dialog lacks %q", want)
+		}
+	}
+	if strings.Contains(body, `aria-label="Tick Alien" checked`) {
+		t.Error("Alien is ticked too")
+	}
+	for query, want := range map[string]string{"ask=forget": "Tick the entries whose answers to forget first.", "ask=forget&focus=9": "Tick the entries whose answers to forget first."} {
+		if _, body := c.get(base + "/entries?" + query); !strings.Contains(body, want) || strings.Contains(body, `<dialog id="forget"`) {
+			t.Errorf("%s: no %q", query, want)
+		}
+	}
+	status, loc := c.post(base+"/entries/forget", url.Values{"id": {"2"}})
+	if status != http.StatusSeeOther || !strings.Contains(loc, "msg=Forgot+2+answers+about+Brazil%2C+which+starts+at+1500+again.") {
+		t.Errorf("forgetting Brazil's answers: %d, %s", status, loc)
+	}
+	if got := c.load("films").Comparisons; !slices.Equal(got, []tierlist.Comparison{{A: 3, B: 4, Answer: "a"}, {A: 1, B: 4, Answer: "b"}}) {
+		t.Errorf("answers left: %v", got)
+	}
+	if _, body := c.get(base + "/entries?ask=forget&focus=1&focus=3"); !strings.Contains(body, "Every answer about Alien and Casablanca goes, 2 answers in all, whatever they were compared with, and their ratings start again at 1500.") {
+		t.Errorf("forgetting two entries' answers:\n%s", body)
+	}
+	if _, body := c.get(base + "/entries?ask=forget&focus=2"); !strings.Contains(body, "Brazil has no answers to forget.") {
+		t.Errorf("forgetting again:\n%s", body)
+	}
+	for _, form := range []url.Values{{}, {"id": {"x"}}, {"id": {"9"}}} {
+		if _, loc := c.post(base+"/entries/forget", form); !strings.Contains(loc, "err=") || len(c.load("films").Comparisons) != 2 {
+			t.Errorf("forgetting %v: %s", form, loc)
+		}
+	}
+}
+
+// Ticked entries can be merged, keeping the details the dialog chooses.
+func TestMergeEntriesPage(t *testing.T) {
+	_, c := start(t, t.TempDir())
+	base := c.newList("Films", `[{"name": "Alien", "description": "Sci-fi"}, "Brazil",
+		{"name": "Alien (1)", "url": "https://example.com/alien", "description": "Horror"}, "Dune"]`)
+	c.answer(base, 1, 2, 0, "a")
+	c.answer(base, 3, 2, 1, "a")
+	c.answer(base, 1, 3, 2, "same")
+	// The defaults: the name without a number, the link there is, and
+	// the description from the entry whose name has no number.
+	_, body := c.get(base + "/entries?ask=merge&focus=3&focus=1")
+	for _, want := range []string{`<dialog id="merge" class="confirm merge" aria-labelledby="merge-title" open data-modal>`,
+		"Merge Alien and Alien (1)?", "apart from the 1 answer between them, which go",
+		`<input type="radio" name="name" value="1" checked> <span class="merge-value">Alien</span>`,
+		`<input type="radio" name="name" value="3"> <span class="merge-value">Alien (1)</span>`,
+		`<input type="radio" name="url" value="1"> <span class="merge-value"><span class="muted">none</span></span>`,
+		`<input type="radio" name="url" value="3" checked> <span class="merge-value">https://example.com/alien</span>`,
+		`<input type="radio" name="description" value="1" checked> <span class="merge-value">Sci-fi</span>`,
+		`<input type="radio" name="description" value="3"> <span class="merge-value">Horror</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("merge dialog lacks %q", want)
+		}
+	}
+	// A detail all the entries share is shown, not asked.
+	if _, body := c.get(base + "/entries?ask=merge&focus=2&focus=4"); !strings.Contains(body, `<input type="hidden" name="url" value="2">`) ||
+		!strings.Contains(body, `<p class="merge-value"><span class="muted">none</span></p>`) || strings.Contains(body, "between them") {
+		t.Errorf("merging Brazil and Dune:\n%s", body)
+	}
+	if _, body := c.get(base + "/entries?ask=merge&focus=1"); !strings.Contains(body, "Tick two or more entries to merge first.") {
+		t.Errorf("merging one entry:\n%s", body)
+	}
+	// A removed entry can't be ticked, and so can't be merged.
+	c.post(base+"/entries/4/remove", nil)
+	if _, body := c.get(base + "/entries?ask=merge&focus=2&focus=4"); !strings.Contains(body, "Tick two or more entries to merge first.") {
+		t.Errorf("merging a removed entry:\n%s", body)
+	}
+	c.post(base+"/entries/4/restore", nil)
+	// Choosing a value from an entry not being merged changes nothing.
+	if _, loc := c.post(base+"/entries/merge", url.Values{"id": {"1", "3"}, "name": {"2"}, "url": {"3"}, "description": {"1"}}); !strings.Contains(loc, "err=Choose+which+name") ||
+		len(c.load("films").Entries) != 4 {
+		t.Errorf("merging with Brazil's name: %s", loc)
+	}
+	status, loc := c.post(base+"/entries/merge", url.Values{"id": {"1", "3"}, "name": {"1"}, "url": {"3"}, "description": {"3"}})
+	if status != http.StatusSeeOther || !strings.Contains(loc, "msg=Merged+Alien+and+Alien+%281%29+into+Alien.+The+1+answer+between+them+went.") {
+		t.Errorf("merging the Aliens: %d, %s", status, loc)
+	}
+	l := c.load("films")
+	for i := range l.Entries {
+		l.Entries[i].Rating = 0 // only the last fit's, to speed up the next
+	}
+	if want := []tierlist.Entry{{ID: 1, Name: "Alien", URL: "https://example.com/alien", Description: "Horror"}, {ID: 2, Name: "Brazil"}, {ID: 4, Name: "Dune"}}; !reflect.DeepEqual(l.Entries, want) ||
+		!slices.Equal(l.Comparisons, []tierlist.Comparison{{A: 1, B: 2, Answer: "a"}, {A: 1, B: 2, Answer: "a"}}) {
+		t.Errorf("merged list: %+v, %v", l.Entries, l.Comparisons)
+	}
+	if status, _ := c.get(base + "/rate"); status != http.StatusOK {
+		t.Errorf("rating page after the merge: %d", status)
 	}
 }
 

@@ -233,6 +233,23 @@ func (l *List) Reset() {
 	l.fit = nil
 }
 
+// ForgetAnswers deletes every answer about any of the entries with the
+// given IDs, whichever entry they were compared with, so that their
+// ratings start over. It returns how many answers it deleted.
+func (l *List) ForgetAnswers(ids []int) (int, error) {
+	forget := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if _, err := l.entry(id); err != nil {
+			return 0, err
+		}
+		forget[id] = true
+	}
+	n := len(l.Comparisons)
+	l.Comparisons = slices.DeleteFunc(l.Comparisons, func(c Comparison) bool { return forget[c.A] || forget[c.B] })
+	l.fit = nil
+	return n - len(l.Comparisons), nil
+}
+
 // Counts returns how many answers involve each entry, by ID.
 func (l *List) Counts() map[int]int {
 	counts := make(map[int]int, len(l.Entries))

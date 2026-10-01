@@ -62,6 +62,14 @@ for (const button of document.querySelectorAll("[data-dialog]")) {
   button.addEventListener("click", () => document.getElementById(button.dataset.dialog).showModal());
 }
 
+// A dialog the page comes with open, such as the one that asks which
+// details to keep when merging the ticked entries, is opened again as a
+// modal one, in front of the page.
+for (const dialog of document.querySelectorAll("dialog[open][data-modal]")) {
+  dialog.close();
+  dialog.showModal();
+}
+
 // Send each form once, so that a double click or a held key cannot answer
 // twice. Closing a dialog with its Cancel button sends nothing, so it
 // doesn't count.

@@ -115,7 +115,7 @@ kbd {
 
 .note { padding: .6rem 1rem; border-radius: 8px; background: var(--accent-soft); margin: 0 0 1rem; }
 .note.error { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-form.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+form.inline, div.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 /* Room for a sentence, such as a list's question */
 form.inline input.wide { flex: 1 1 16rem; max-width: 32rem; min-width: 0; }
 
@@ -133,6 +133,13 @@ dialog.confirm h2 { margin: 0 0 .75rem; overflow-wrap: anywhere; }
 dialog.confirm p { margin: 0 0 .5rem; }
 dialog.confirm .warning { font-weight: 600; color: var(--danger); }
 dialog.confirm .actions { justify-content: flex-end; margin: 1.25rem 0 0; }
+/* Merging entries: a choice of each detail, which can be a long link or
+   description */
+dialog.merge { width: min(36rem, calc(100vw - 2rem)); }
+dialog.merge fieldset { display: grid; gap: .35rem; margin: 0 0 .75rem; }
+dialog.merge label.check { align-items: baseline; }
+dialog.merge .merge-value { overflow-wrap: anywhere; }
+dialog.merge p.merge-value { margin: 0; }
 
 /* Library */
 .lists { list-style: none; padding: 0; display: grid; gap: .5rem; margin: 0 0 1.5rem; }

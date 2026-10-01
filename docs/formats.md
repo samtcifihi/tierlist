@@ -144,6 +144,7 @@ Importing:
 
 - The whole text is checked first. If anything is wrong, nothing is saved, and the start page shows the text again with the reason.
 - An import never replaces a list. If there is a list of the same name already, ignoring case, the new list's name gets a number, as in "Films (2)".
+- An import into one of the lists, chosen beside **Import**, takes only the entries, with their links, descriptions and answers; that list keeps all else of its own. An imported entry whose name the list already has, ignoring case, gets " (k)" added, with `k` the smallest whole number from 1 up that no entry of either list ends with in that form.
 - Ratings aren't read from the file: they are worked out from the answers (`comparisons`), and the `rating` and `drawElo` values the program saves only make that quicker. So a list with no answers starts with every entry at 1500, whatever the file says.
 
 For the whole file:
