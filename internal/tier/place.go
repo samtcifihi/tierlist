@@ -35,18 +35,25 @@ const (
 )
 
 // Positions chooses where on [0, 1] each entry of a ranked list stands, for
-// the template's cut-offs to split into tiers.
+// the template's cut-offs to split into tiers. Neither way pins the best
+// entry to 1 or the worst to 0: each of n entries stands in the middle of
+// a 1/n share of [0, 1], so that a tier gets as many entries as its share
+// of [0, 1] holds, rounded, and the best and worst entries go in the top
+// and bottom tiers only if those are big enough.
 type Positions int
 
 const (
-	// ByRank spaces the entries evenly by rank, the worst at 0 and the
-	// best at 1, so that each tier's share of [0, 1] is its share of the
-	// entries: the entry-proportional method.
+	// ByRank spaces the entries evenly by rank, each in the middle of its
+	// share: the k-th best of n stands at (n-k+1/2)/n, from 1/(2n) for the
+	// worst to 1-1/(2n) for the best. So each tier's share of [0, 1] is
+	// its share of the entries: the entry-proportional method.
 	ByRank Positions = iota
-	// ByRating puts each entry where its rating lies between the worst
-	// rating, at 0, and the best, at 1, so that each tier's share of
-	// [0, 1] is its share of the range of ratings, however many entries
-	// that holds: the rating-proportional method.
+	// ByRating puts each entry where its rating lies in the range of
+	// ratings, widened at each end by half the average gap between
+	// neighbouring ratings, so that evenly spaced ratings stand where
+	// their ranks would. So each tier's share of [0, 1] is its share of
+	// the range of ratings, however many entries that holds: the
+	// rating-proportional method.
 	ByRating
 )
 
@@ -138,20 +145,28 @@ func Place(ratings []float64, t Template, o Options) ([]int, error) {
 func (o Options) position(ratings []float64, i int, cutoffs []*big.Rat) *big.Rat {
 	n := len(ratings)
 	if o.Positions == ByRank {
-		return big.NewRat(int64(n-1-i), int64(n-1))
+		return big.NewRat(int64(2*(n-1-i)+1), int64(2*n))
 	}
-	worst, span := ratings[n-1], ratings[0]-ratings[n-1]
+	span := ratings[0] - ratings[n-1]
 	if span <= o.Tolerance {
 		return big.NewRat(1, 2)
 	}
+	// The range of ratings, widened by half the average gap at each end,
+	// runs from low across width.
+	half := span / float64(2*(n-1))
+	low, width := ratings[n-1]-half, span+2*half
 	for _, c := range cutoffs {
 		f, _ := c.Float64()
-		if math.Abs(ratings[i]-(worst+f*span)) <= o.Tolerance {
+		// float64 rounds the product on its own, as it would be without
+		// fusing it into the sum, which some processors (arm64) would do,
+		// rounding once and so differently.
+		if math.Abs(ratings[i]-(low+float64(f*width))) <= o.Tolerance {
 			return c
 		}
 	}
-	// Between the worst rating and the best, this lies in [0, 1].
-	return new(big.Rat).SetFloat64((ratings[i] - worst) / span)
+	// Within the widened range, this lies in [1/(2n), 1-1/(2n)], but for
+	// rounding.
+	return new(big.Rat).SetFloat64(min(max((ratings[i]-low)/width, 0), 1))
 }
 
 // groupTier returns the tier for a group whose members, best first, would

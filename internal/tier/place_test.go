@@ -24,16 +24,19 @@ func placeNames(t *testing.T, ratings []float64, tmpl Template, o Options) strin
 }
 
 func TestPlace(t *testing.T) {
-	// Seven entries sit at 1, 5/6, 2/3, 1/2, 1/3, 1/6 and 0, so alone they
-	// would go top, top, top, middle, middle, bottom, bottom (or, with the
-	// bottom tier closed, top, top, middle, middle, bottom, bottom, bottom).
+	// Seven entries stand each in the middle of a seventh of [0, 1], at
+	// 13/14, 11/14, 9/14, 1/2, 5/14, 3/14 and 1/14, so alone they would go
+	// top, top, middle, middle, middle, bottom, bottom.
 	three := []string{"top", "middle", "bottom"}
-	topClosed := mustNew(t, "thirds", three, rats("1/3", "2/3"), TopClosed)
-	bottomClosed := mustNew(t, "thirds", three, rats("1/3", "2/3"), BottomClosed)
+	thirds := mustNew(t, "thirds", three, rats("1/3", "2/3"), TopClosed)
+	thirdsDown := mustNew(t, "thirds", three, rats("1/3", "2/3"), BottomClosed)
+	halves := mustNew(t, "halves", []string{"top", "bottom"}, rats("1/2"), TopClosed)
+	halvesDown := mustNew(t, "halves", []string{"top", "bottom"}, rats("1/2"), BottomClosed)
 	spaced := []float64{700, 600, 500, 400, 300, 200, 100}
-	pair := []float64{700, 600, 501, 500, 300, 200, 100}      // groups the 3rd and 4th
-	triple := []float64{700, 600, 502, 500, 498, 200, 100}    // groups the 3rd to 5th
-	quadruple := []float64{703, 702, 701, 700, 300, 200, 100} // groups the 1st to 4th
+	pair := []float64{700, 601, 600, 400, 300, 200, 100}         // groups the 2nd and 3rd: top and middle
+	triple := []float64{700, 602, 600, 598, 300, 200, 100}       // groups the 2nd to 4th: top, middle, middle
+	quadruple := []float64{703, 702, 701, 700, 300, 200, 100}    // groups the 1st to 4th: top, top, middle, middle
+	lowQuadruple := []float64{700, 600, 503, 502, 501, 500, 100} // groups the 3rd to 6th: middle × 3, bottom
 
 	tests := []struct {
 		name    string
@@ -42,33 +45,40 @@ func TestPlace(t *testing.T) {
 		opts    Options
 		want    string
 	}{
-		{"no groups", topClosed, spaced, Options{DrawMargin: 50},
+		{"no groups", thirds, spaced, Options{DrawMargin: 50},
+			"top top middle middle middle bottom bottom"},
+		{"no groups, bottom closed", thirdsDown, spaced, Options{DrawMargin: 50},
+			"top top middle middle middle bottom bottom"},
+		// Three entries stand at 5/6, 1/2 and 1/6: the middle one is on the
+		// cut-off, so the convention decides.
+		{"on a cut-off, top closed", halves, []float64{3, 2, 1}, Options{},
+			"top top bottom"},
+		{"on a cut-off, bottom closed", halvesDown, []float64{3, 2, 1}, Options{},
+			"top bottom bottom"},
+		{"odd group: middle entry decides", thirds, triple, Options{DrawMargin: 5},
+			"top middle middle middle middle bottom bottom"},
+		{"even group, middles split, higher", thirds, pair, Options{DrawMargin: 5},
 			"top top top middle middle bottom bottom"},
-		{"no groups, bottom closed", bottomClosed, spaced, Options{DrawMargin: 50},
-			"top top middle middle bottom bottom bottom"},
-		{"odd group: middle entry decides", topClosed, triple, Options{DrawMargin: 5},
-			"top top middle middle middle bottom bottom"},
-		{"even group, middles split, higher", topClosed, pair, Options{DrawMargin: 5},
+		{"even group, middles split, lower", thirds, pair, Options{DrawMargin: 5, Prefer: Lower},
+			"top middle middle middle middle bottom bottom"},
+		{"even group, middles agree", thirds, lowQuadruple, Options{DrawMargin: 5, Prefer: Lower},
+			"top top middle middle middle middle bottom"},
+		{"alternate rule, highest", thirds, quadruple, Options{DrawMargin: 5, Rule: Alternate},
 			"top top top top middle bottom bottom"},
-		{"even group, middles split, lower", topClosed, pair, Options{DrawMargin: 5, Prefer: Lower},
-			"top top middle middle middle bottom bottom"},
-		{"even group, middles agree", topClosed, quadruple, Options{DrawMargin: 5, Prefer: Lower},
-			"top top top top middle bottom bottom"},
-		{"alternate rule, highest", topClosed, quadruple, Options{DrawMargin: 5, Rule: Alternate},
-			"top top top top middle bottom bottom"},
-		{"alternate rule, lowest", topClosed, quadruple, Options{DrawMargin: 5, Rule: Alternate, Prefer: Lower},
+		{"alternate rule, lowest", thirds, quadruple, Options{DrawMargin: 5, Rule: Alternate, Prefer: Lower},
 			"middle middle middle middle middle bottom bottom"},
 		// The README's example: with a draw-margin of 1, ratings 3, 2 and
 		// 1 chain into one group even though 3 and 1 differ by 2.
-		{"groups chain", topClosed, []float64{3, 2, 1}, Options{DrawMargin: 1},
+		{"groups chain", thirds, []float64{3, 2, 1}, Options{DrawMargin: 1},
 			"middle middle middle"},
-		{"chain broken", topClosed, []float64{4, 2, 1}, Options{DrawMargin: 1},
+		{"chain broken", thirds, []float64{4, 2, 1}, Options{DrawMargin: 1},
 			"top middle middle"},
-		{"equal ratings group at margin 0", topClosed, []float64{5, 5, 1}, Options{},
+		{"equal ratings group at margin 0", thirds, []float64{5, 5, 1}, Options{},
 			"top top bottom"},
-		{"one big group", topClosed, spaced, Options{DrawMargin: 1000},
+		{"one big group", thirds, spaced, Options{DrawMargin: 1000},
 			"middle middle middle middle middle middle middle"},
-		{"two entries", topClosed, []float64{2, 1}, Options{},
+		// At 3/4 and 1/4.
+		{"two entries", thirds, []float64{2, 1}, Options{},
 			"top bottom"},
 	}
 	for _, tt := range tests {
@@ -83,16 +93,22 @@ func TestPlace(t *testing.T) {
 // With the star cut-offs, an entry gets the star rating nearest its
 // position, and the convention decides which way an exact half rounds.
 func TestPlaceStars(t *testing.T) {
-	eleven := []float64{11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1} // at 1, 9/10, ..., 0
+	// At 21/22, 19/22, ..., 1/22: the middle one, at 1/2, is halfway
+	// between 2 and 3 stars of 0–5.
+	eleven := []float64{11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
 	tests := []struct {
 		name    string
 		c       Convention
 		ratings []float64
 		want    string
 	}{
+		// At 11/12, 3/4, 7/12, 5/12, 1/4 and 1/12.
 		{"one entry per star", TopClosed, []float64{6, 5, 4, 3, 2, 1}, "5 4 3 2 1 0"},
-		{"halves round up", TopClosed, eleven, "5 5 4 4 3 3 2 2 1 1 0"},
-		{"halves round down", BottomClosed, eleven, "5 4 4 3 3 2 2 1 1 0 0"},
+		{"a half rounds up", TopClosed, eleven, "5 4 4 3 3 3 2 2 1 1 0"},
+		{"a half rounds down", BottomClosed, eleven, "5 4 4 3 3 2 2 2 1 1 0"},
+		// At 9/10, 7/10, ..., 1/10: each halfway between two stars.
+		{"all halves round up", TopClosed, []float64{5, 4, 3, 2, 1}, "5 4 3 2 1"},
+		{"all halves round down", BottomClosed, []float64{5, 4, 3, 2, 1}, "4 3 2 1 0"},
 	}
 	for _, tt := range tests {
 		stars := mustStars(t, StarOptions{Max: 5}, tt.c)
@@ -137,8 +153,10 @@ func TestPlaceByRating(t *testing.T) {
 		opts    Options
 		want    string
 	}{
-		// At 1, 8/9, 1/9, 1/18 and 0: nothing in the middle third of the
-		// range, though by rank the middle entry would be there.
+		// The average gap is 225, so the range, widened by half of it at
+		// each end, runs from -12.5 to 1112.5, and these stand at 0.9,
+		// 0.81, 0.19, 0.14 and 0.1: nothing in the middle third, though by
+		// rank the middle entry would be there.
 		{"a gap in the ratings", thirds, []float64{1000, 900, 200, 150, 100}, byRating,
 			"top top bottom bottom bottom"},
 		{"a gap in the ratings, by rank", thirds, []float64{1000, 900, 200, 150, 100}, Options{},
@@ -146,7 +164,8 @@ func TestPlaceByRating(t *testing.T) {
 		// One far ahead squeezes the rest to the bottom.
 		{"an outlier", thirds, []float64{2000, 300, 200, 100}, byRating,
 			"top bottom bottom bottom"},
-		// Exactly on the cut-off, the convention decides.
+		// Exactly on the cut-off, the convention decides: the widened range
+		// runs from 50 to 350, so 200 is at 1/2.
 		{"on a cut-off, top closed", halves, []float64{300, 200, 100}, byRating,
 			"top top bottom"},
 		{"on a cut-off, bottom closed", halvesDown, []float64{300, 200, 100}, byRating,
@@ -161,9 +180,9 @@ func TestPlaceByRating(t *testing.T) {
 			"top bottom bottom"},
 		{"just below a cut-off, no tolerance", halves, []float64{300, 200 - 1e-9, 100}, with(byRating, func(o *Options) { o.Tolerance = 0 }),
 			"top bottom bottom"},
-		// A third of the way up is on the cut-off at 1/3, though 1/3 can't
-		// be written exactly as a float.
-		{"on a cut-off of 1/3, no tolerance", thirds, []float64{3, 1, 0}, with(byRating, func(o *Options) { o.Tolerance = 0 }),
+		// The widened range runs from -1 to 5, so 1 is on the cut-off at
+		// 1/3, though 1/3 can't be written exactly as a float.
+		{"on a cut-off of 1/3, no tolerance", thirds, []float64{4, 1, 0}, with(byRating, func(o *Options) { o.Tolerance = 0 }),
 			"top middle bottom"},
 		// Ratings all the same, or all within the tolerance, stand at 1/2.
 		{"all the same", thirds, []float64{5, 5, 5, 5}, byRating,
@@ -176,11 +195,12 @@ func TestPlaceByRating(t *testing.T) {
 			"middle middle middle"},
 		{"all within the tolerance, bottom closed", thirdsDown, []float64{5 + 1e-9, 5, 5 - 1e-9}, byRating,
 			"middle middle middle"},
-		// Groups work as by rank: at 1, 0.678, 0.656 and 0, the 2nd and
-		// 3rd would go top and middle alone, and go together.
-		{"a group split by a cut-off, higher", thirds, []float64{900, 610, 590, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30 }),
+		// Groups work as by rank: the widened range runs from -150 to 1050,
+		// so these stand at 0.875, 0.675, 0.658 and 0.125, and the 2nd and
+		// 3rd would go top and middle alone, but go together.
+		{"a group split by a cut-off, higher", thirds, []float64{900, 660, 640, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30 }),
 			"top top top bottom"},
-		{"a group split by a cut-off, lower", thirds, []float64{900, 610, 590, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30; o.Prefer = Lower }),
+		{"a group split by a cut-off, lower", thirds, []float64{900, 660, 640, 0}, with(byRating, func(o *Options) { o.DrawMargin = 30; o.Prefer = Lower }),
 			"top middle middle bottom"},
 		{"a group, alternate rule", thirds, []float64{900, 610, 590, 300, 0}, with(byRating, func(o *Options) { o.DrawMargin = 300; o.Rule = Alternate; o.Prefer = Lower }),
 			"bottom bottom bottom bottom bottom"},
@@ -219,6 +239,57 @@ func TestPlaceByRatingEvenlySpaced(t *testing.T) {
 						tmpl.Name, tmpl.Convention, n, step, byRank, err1, byRating, err2)
 				}
 			}
+		}
+	}
+}
+
+// Each tier gets its share of the entries, to within one: a tier too small
+// for an entry stays empty, even at the top or the bottom.
+func TestPlaceSharesOfEntries(t *testing.T) {
+	templates := []Template{
+		mustStars(t, StarOptions{Max: 10}, TopClosed),
+		mustStars(t, StarOptions{Max: 10, Sizes: Sizes{Kind: BetaTiers, Alpha: 2, Beta: 2}}, TopClosed),
+		mustStars(t, StarOptions{Max: 5, Sizes: Sizes{Kind: GeometricTiers, Factor: 1.618}}, BottomClosed),
+		mustStars(t, StarOptions{Max: 50, Sizes: Sizes{Kind: GeometricTiers, Factor: 1e10}}, TopClosed),
+		mustNew(t, "thirds", []string{"a", "b", "c"}, rats("1/3", "2/3"), BottomClosed),
+	}
+	for _, tmpl := range templates {
+		shares := tmpl.Shares() // worst first
+		for n := 2; n <= 60; n++ {
+			ratings := make([]float64, n)
+			for i := range ratings {
+				ratings[i] = float64(n - i)
+			}
+			for _, positions := range []Positions{ByRank, ByRating} {
+				placed, err := Place(ratings, tmpl, Options{Positions: positions, Tolerance: 1e-9})
+				if err != nil {
+					t.Fatal(err)
+				}
+				counts := make([]int, len(tmpl.Tiers))
+				for _, tier := range placed {
+					counts[tier]++
+				}
+				for k, count := range counts {
+					share := shares[len(shares)-1-k]
+					if math.Abs(float64(count)-float64(n)*share) >= 1 {
+						t.Errorf("%s, %d entries, positions %d: tier %s holds %d, for a share of %.4f", tmpl.Name, n, positions, tmpl.Tiers[k], count, share)
+					}
+				}
+			}
+		}
+	}
+	// So with Beta(2, 2) stars, 0 and 10 stars, each 2.3% of [0, 1], stay
+	// empty until a list has 22 entries.
+	beta := templates[1]
+	for _, n := range []int{21, 22} {
+		ratings := make([]float64, n)
+		for i := range ratings {
+			ratings[i] = float64(n - i)
+		}
+		placed, _ := Place(ratings, beta, Options{})
+		top, bottom := slices.Contains(placed, 0), slices.Contains(placed, 10)
+		if top != (n == 22) || bottom != (n == 22) {
+			t.Errorf("%d entries on Beta(2, 2) stars: tiers %v", n, placed)
 		}
 	}
 }

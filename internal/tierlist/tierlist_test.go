@@ -590,9 +590,10 @@ func TestTiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// On 0–5 stars, positions 1, 1/2 and 0 give 5, 3 (1/2 is a cut-off and
-	// the top tier is closed, so it rounds up) and 0 stars.
-	want := []Row{{"5", []int{1}}, {"4", nil}, {"3", []int{2}}, {"2", nil}, {"1", nil}, {"0", []int{3}}}
+	// Three entries stand at 5/6, 1/2 and 1/6, which on 0–5 stars give 4,
+	// 3 (1/2 is a cut-off and the top tier is closed, so it rounds up) and
+	// 1 star: a list this short has no entry in the top or bottom tenth.
+	want := []Row{{"5", nil}, {"4", []int{1}}, {"3", []int{2}}, {"2", nil}, {"1", []int{3}}, {"0", nil}}
 	if !slices.EqualFunc(rows, want, func(a, b Row) bool { return a.Name == b.Name && slices.Equal(a.Entries, b.Entries) }) {
 		t.Errorf("rows %v, want %v", rows, want)
 	}
@@ -799,7 +800,7 @@ func TestDrawMarginInPoints(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if together := len(rows[0].Entries) == 2; together != c.together {
+		if together := slices.ContainsFunc(rows, func(r Row) bool { return len(r.Entries) == 2 }); together != c.together {
 			t.Errorf("entries %g points apart, draw-margin %g: rows %v", gap, c.margin, rows)
 		}
 	}

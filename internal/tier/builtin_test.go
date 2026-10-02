@@ -100,11 +100,12 @@ func TestGeometricTiers(t *testing.T) {
 	}
 	// However steep, the tiers still cover [0, 1] in order (New checks
 	// that); ones too small for a float64 become tiny but keep their place.
-	// With a factor of 1e10 from the best, the best entry is alone at the
-	// top and the rest fall to the bottom tier, which is nearly all of it.
+	// With a factor of 1e10 from the best, the bottom tier is nearly all of
+	// [0, 1], and the others are far too small to hold any of five entries,
+	// even the best, which stands at 9/10.
 	steep := mustStars(t, StarOptions{Max: 50, Sizes: Sizes{Kind: GeometricTiers, Factor: 1e10}}, TopClosed)
 	placed, err := Place([]float64{5, 4, 3, 2, 1}, steep, Options{})
-	if err != nil || !slices.Equal(placed, []int{0, 50, 50, 50, 50}) {
+	if err != nil || !slices.Equal(placed, []int{50, 50, 50, 50, 50}) {
 		t.Errorf("five entries on a factor of 1e10: tiers %v, %v", placed, err)
 	}
 }

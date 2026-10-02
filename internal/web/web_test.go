@@ -570,10 +570,13 @@ func TestTierListPage(t *testing.T) {
 	base := c.newList("Films", "Alien", "Brazil", "Casablanca")
 	c.answer(base, 1, 2, 0, "a")
 	c.answer(base, 2, 3, 1, "a")
+	// Three entries stand at 5/6, 1/2 and 1/6, so on 0–10 stars they get
+	// 8, 5 and 2 stars: a list this short has nothing in the top or
+	// bottom twentieth.
 	status, body := c.get(base + "/tiers")
 	if status != http.StatusOK || !strings.Contains(body, `<div class="tier" style="--hue: 250">
-      <div class="tier-label">10★ (1)</div>`) ||
-		!strings.Contains(body, "10★ (1): Alien\n9★ (0):\n8★ (0):\n7★ (0):\n6★ (0):\n5★ (1): Brazil\n4★ (0):\n3★ (0):\n2★ (0):\n1★ (0):\n0★ (1): Casablanca") {
+      <div class="tier-label">10★ (0)</div>`) ||
+		!strings.Contains(body, "10★ (0):\n9★ (0):\n8★ (1): Alien\n7★ (0):\n6★ (0):\n5★ (1): Brazil\n4★ (0):\n3★ (0):\n2★ (1): Casablanca\n1★ (0):\n0★ (0):") {
 		t.Fatalf("tier list page: %d\n%s", status, body)
 	}
 	fit, err := c.load("films").Fit()
@@ -595,8 +598,9 @@ func TestTierListPage(t *testing.T) {
 	if status, _ := display("owl-newt", nil); status != http.StatusSeeOther {
 		t.Errorf("choosing OWL/NEWT: %d", status)
 	}
-	// Switching back to stars from here finds them as they were: 0–5.
-	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding (1): Alien") ||
+	// Outstanding is the top 31st, beyond the best of three entries, at
+	// 5/6. Switching back to stars from here finds them as they were: 0–5.
+	if _, body := c.get(base + "/tiers"); !strings.Contains(body, "Outstanding (0):\nExceeds Expectations (0):\nAcceptable (1): Alien\n") ||
 		!strings.Contains(body, `name="maxStars" min="3" value="5"`) || !strings.Contains(body, `value="owl-newt" checked> OWL/NEWT`) {
 		t.Errorf("OWL/NEWT tier list:\n%s", body)
 	}
@@ -1314,15 +1318,16 @@ func TestNamedTiers(t *testing.T) {
 		return html.UnescapeString(m[1])
 	}
 	// Four tiers sized as the nearest tier, as if they stood at 1, 2/3,
-	// 1/3 and 0: cut-offs at 1/6, 1/2 and 5/6, so the eight entries go two
-	// to a tier.
+	// 1/3 and 0: cut-offs at 1/6, 1/2 and 5/6, so shares of 1/6, 1/3, 1/3
+	// and 1/6. The eight entries stand at 15/16, 13/16, ..., 1/16, so the
+	// tiers get 1, 3, 3 and 1 of them: their shares of eight, rounded.
 	if status, loc := display(nil); status != http.StatusSeeOther || strings.Contains(loc, "err=") {
 		t.Fatalf("choosing named tiers: %d, %s", status, loc)
 	}
 	if tm := c.load("letters").Display.Template; tm.Kind != "named" || !slices.Equal(tm.Tiers, []string{"Top", "Good", "Okay", "Weak"}) || tm.Sizes != "" {
 		t.Errorf("saved template %+v", tm)
 	}
-	if got := plain(); got != "Top (2): A, B\nGood (2): C, D\nOkay (2): E, F\nWeak (2): G, H" {
+	if got := plain(); got != "Top (1): A\nGood (3): B, C, D\nOkay (3): E, F, G\nWeak (1): H" {
 		t.Errorf("nearest-tier tier list:\n%s", got)
 	}
 	_, body := c.get(base + "/tiers")
